@@ -113,7 +113,8 @@
             "group": "UI Package",
             "pages": [
               "api/ui/components",
-              "api/ui/ui-app-decorator"
+              "api/ui/ui-app-decorator",
+              "api/ui/gpt-app-decorator"
             ]
           },
           {

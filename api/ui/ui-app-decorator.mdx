@@ -5,6 +5,10 @@ description: "Link MCP tools to React UI components"
 
 # @UIApp Decorator
 
+<Note>
+**@UIApp vs @GPTApp**: Use `@UIApp` for general MCP apps. For ChatGPT Apps with OpenAI-specific metadata (widget controls, CSP, invocation messages), use [@GPTApp](/api/ui/gpt-app-decorator).
+</Note>
+
 The `@UIApp` decorator links an MCP tool to a React UI component. When applied to a tool method, it automatically:
 
 1. Adds `_meta.ui.resourceUri` to the tool definition

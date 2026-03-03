@@ -1,0 +1,551 @@
+---
+title: "@GPTApp Decorator"
+description: "Link MCP tools to React UI components for ChatGPT Apps"
+---
+
+# @GPTApp Decorator
+
+<Note>
+**@GPTApp vs @UIApp**: Use `@GPTApp` for ChatGPT Apps with OpenAI-specific metadata (widget controls, CSP, invocation messages). For general MCP apps, use [@UIApp](/api/ui/ui-app-decorator).
+</Note>
+
+The `@GPTApp` decorator links an MCP tool to a React UI component compliant with the ChatGPT Apps SDK. When applied to a tool method, it automatically:
+
+1. Adds `_meta.ui.resourceUri` to the tool definition
+2. Adds OpenAI-specific metadata (widgetAccessible, widgetDescription, etc.)
+3. Registers a resource that renders the component to HTML with `text/html+skybridge` mimeType
+4. Enables ChatGPT to display your widget with proper security and behavior controls
+
+## Installation
+
+```bash
+npm install @leanmcp/ui reflect-metadata
+```
+
+## Usage
+
+```typescript
+import { Tool } from '@leanmcp/core';
+import { GPTApp } from '@leanmcp/ui';
+import { KanbanBoard } from './KanbanBoard';
+
+class KanbanService {
+  @Tool({ description: 'Show Kanban Board' })
+  @GPTApp({
+    component: KanbanBoard,
+    widgetAccessible: true,
+    invocation: { 
+      invoking: 'Loading board...', 
+      invoked: 'Board ready.' 
+    }
+  })
+  async showBoard() {
+    return { 
+      tasks: [
+        { id: 1, title: 'Task 1', status: 'todo' },
+        { id: 2, title: 'Task 2', status: 'done' }
+      ]
+    };
+  }
+}
+```
+
+## API Reference
+
+### @GPTApp(options)
+
+Decorator function that links a tool to a UI component for ChatGPT Apps.
+
+<ParamField path="options" type="GPTAppOptions" required>
+  Configuration options
+</ParamField>
+
+#### GPTAppOptions
+
+<ParamField path="component" type="React.ComponentType<any> | string" required>
+  React component or path to component file (relative to service file)
+  
+  - Use component reference for direct SSR rendering
+  - Use path string (e.g., `'./WeatherCard'`) for CLI build - avoids importing browser code in server
+</ParamField>
+
+<ParamField path="uri" type="string">
+  Custom resource URI. Auto-generated if not provided.
+  
+  Default format: `ui://{className}/{methodName}`
+  
+  Example: `ui://weather/getWeather`
+</ParamField>
+
+<ParamField path="title" type="string">
+  HTML document title for the rendered UI
+</ParamField>
+
+<ParamField path="styles" type="string">
+  Additional CSS styles to inject into the HTML document
+</ParamField>
+
+### OpenAI-Specific Options
+
+<ParamField path="widgetAccessible" type="boolean">
+  Allow widget to call tools via `window.openai.callTool`.
+  
+  Maps to `_meta["openai/widgetAccessible"]`
+</ParamField>
+
+<ParamField path="visibility" type="'public' | 'private'" default="'public'">
+  Tool visibility:
+  - `'public'`: Visible to both model and widget
+  - `'private'`: Hidden from model but callable by widget
+  
+  Maps to `_meta["openai/visibility"]`
+</ParamField>
+
+<ParamField path="prefersBorder" type="boolean">
+  Widget prefers border around iframe.
+  
+  Maps to `_meta["openai/widgetPrefersBorder"]`
+</ParamField>
+
+<ParamField path="widgetDomain" type="string">
+  Widget domain for API allowlists.
+  
+  Maps to `_meta["openai/widgetDomain"]`
+</ParamField>
+
+<ParamField path="widgetDescription" type="string">
+  Widget description shown to the model.
+  
+  Maps to `_meta["openai/widgetDescription"]`
+</ParamField>
+
+<ParamField path="csp" type="object">
+  Content Security Policy configuration for the widget.
+  
+  Maps to `_meta["openai/widgetCSP"]`
+  
+  <Expandable title="CSP Options">
+    <ParamField path="connect_domains" type="string[]">
+      Domains the widget can connect to
+    </ParamField>
+    
+    <ParamField path="resource_domains" type="string[]">
+      Domains for loading resources (images, scripts, etc.)
+    </ParamField>
+    
+    <ParamField path="redirect_domains" type="string[]">
+      Allowed redirect domains
+    </ParamField>
+    
+    <ParamField path="frame_domains" type="string[]">
+      Domains that can be embedded in iframes
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="fileParams" type="string[]">
+  Field names that should be treated as file uploads.
+  
+  Maps to `_meta["openai/fileParams"]`
+</ParamField>
+
+<ParamField path="invocation" type="object">
+  Messages shown during tool invocation.
+  
+  Maps to `_meta["openai/toolInvocation"]`
+  
+  <Expandable title="Invocation Messages">
+    <ParamField path="invoking" type="string">
+      Message shown while tool is executing
+      
+      Example: `"Preparing the board…"`
+    </ParamField>
+    
+    <ParamField path="invoked" type="string">
+      Message shown after tool completes
+      
+      Example: `"Board ready."`
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Examples
+
+### Basic Widget
+
+```typescript
+import { Tool } from '@leanmcp/core';
+import { GPTApp } from '@leanmcp/ui';
+import { WeatherCard } from './WeatherCard';
+
+class WeatherService {
+  @Tool({ description: 'Get weather for a city' })
+  @GPTApp({
+    component: WeatherCard,
+    widgetAccessible: true
+  })
+  async getWeather(args: { city: string }) {
+    return { 
+      city: args.city, 
+      temp: 22, 
+      conditions: 'Sunny' 
+    };
+  }
+}
+```
+
+### Private Tool (Widget-Only)
+
+```typescript
+@Tool({ description: 'Internal helper tool' })
+@GPTApp({
+  component: HelperWidget,
+  visibility: 'private', // Hidden from model
+  widgetAccessible: true
+})
+async helperTool() {
+  return { data: 'internal' };
+}
+```
+
+### Custom Invocation Messages
+
+```typescript
+@Tool({ description: 'Generate report' })
+@GPTApp({
+  component: ReportViewer,
+  invocation: {
+    invoking: 'Generating your report…',
+    invoked: 'Report ready!'
+  }
+})
+async generateReport(args: { type: string }) {
+  return { report: '...' };
+}
+```
+
+### Content Security Policy
+
+```typescript
+@Tool({ description: 'Show analytics dashboard' })
+@GPTApp({
+  component: Dashboard,
+  widgetAccessible: true,
+  csp: {
+    connect_domains: ['api.analytics.com', 'cdn.charts.com'],
+    resource_domains: ['cdn.charts.com'],
+    redirect_domains: ['analytics.com']
+  }
+})
+async showDashboard() {
+  return { stats: { users: 1234 } };
+}
+```
+
+### File Upload Support
+
+```typescript
+class ImageInput {
+  @SchemaConstraint({ description: 'Image to process' })
+  image!: string; // Base64 or URL
+  
+  @Optional()
+  format?: string;
+}
+
+@Tool({ 
+  description: 'Process image',
+  inputClass: ImageInput 
+})
+@GPTApp({
+  component: ImageProcessor,
+  fileParams: ['image'], // Treat 'image' as file upload
+  widgetAccessible: true
+})
+async processImage(args: ImageInput) {
+  return { processed: true };
+}
+```
+
+### Widget with Border
+
+```typescript
+@Tool({ description: 'Show notification' })
+@GPTApp({
+  component: NotificationCard,
+  prefersBorder: true, // Request border around iframe
+  widgetDescription: 'Displays user notifications'
+})
+async showNotifications() {
+  return { notifications: [] };
+}
+```
+
+### Path-based Component (CLI)
+
+```typescript
+// Use path string for CLI builds
+@Tool({ description: 'Show dashboard' })
+@GPTApp({ 
+  component: './Dashboard',
+  widgetAccessible: true,
+  invocation: {
+    invoking: 'Loading dashboard…'
+  }
+})
+async getDashboard() {
+  return { stats: { users: 1234 } };
+}
+```
+
+## Helper Functions
+
+### getGPTAppMetadata()
+
+Get GPTApp metadata from a method.
+
+```typescript
+import { getGPTAppMetadata } from '@leanmcp/ui';
+
+const metadata = getGPTAppMetadata(myMethod);
+if (metadata) {
+  console.log('Component:', metadata.component);
+  console.log('URI:', metadata.uri);
+  console.log('Widget accessible:', metadata.widgetAccessible);
+}
+```
+
+#### Returns
+
+<ResponseField name="metadata" type="GPTAppOptions | undefined">
+  GPTApp options if decorator was applied, undefined otherwise
+</ResponseField>
+
+### getGPTAppUri()
+
+Get the resource URI from a method.
+
+```typescript
+import { getGPTAppUri } from '@leanmcp/ui';
+
+const uri = getGPTAppUri(myMethod);
+// Returns: "ui://weather/getWeather" or undefined
+```
+
+#### Returns
+
+<ResponseField name="uri" type="string | undefined">
+  Resource URI if decorator was applied, undefined otherwise
+</ResponseField>
+
+## How It Works
+
+### 1. Metadata Storage
+
+The decorator stores metadata using `reflect-metadata`:
+
+```typescript
+// Stored on the method
+Reflect.defineMetadata(GPT_APP_COMPONENT_KEY, component, method);
+Reflect.defineMetadata(GPT_APP_URI_KEY, uri, method);
+Reflect.defineMetadata(GPT_APP_OPTIONS_KEY, options, method);
+```
+
+### 2. Tool Metadata Enhancement
+
+The decorator adds OpenAI-specific metadata to the tool definition:
+
+```json
+{
+  "name": "showBoard",
+  "description": "Show Kanban Board",
+  "_meta": {
+    "ui": {
+      "resourceUri": "ui://kanban/showBoard",
+      "visibility": ["model", "app"]
+    },
+    "openai/widgetAccessible": true,
+    "openai/toolInvocation/invoking": "Loading board...",
+    "openai/toolInvocation/invoked": "Board ready."
+  }
+}
+```
+
+### 3. Dual Format Support
+
+The decorator provides both:
+- **New nested format** (preferred by ext-apps 0.2.2+): `_meta.ui.*`
+- **Legacy flat format** (backwards compatibility): `_meta["openai/*"]`
+
+### 4. Resource Registration
+
+A resource is automatically registered that:
+- Renders the React component to HTML
+- Injects the tool result as context
+- Returns HTML with `text/html+skybridge` mimeType
+- Includes OpenAI widget integration scripts
+
+### 5. ChatGPT Integration
+
+When the tool is called in ChatGPT:
+1. ChatGPT sees the `ui.resourceUri` in tool metadata
+2. Fetches the resource HTML
+3. Displays the widget in an iframe
+4. Applies CSP and security policies
+5. Enables widget-to-tool communication if `widgetAccessible: true`
+
+## URI Format
+
+By default, URIs follow the pattern:
+
+```
+ui://{className}/{methodName}
+```
+
+Examples:
+- `WeatherService.getWeather` → `ui://weather/getWeather`
+- `KanbanService.showBoard` → `ui://kanban/showBoard`
+- `UserService.getProfile` → `ui://user/getProfile`
+
+The class name:
+- Is converted to lowercase
+- Has the `Service` suffix removed (if present)
+
+## Integration with @Tool
+
+The `@GPTApp` decorator works seamlessly with `@Tool` from `@leanmcp/core`:
+
+```typescript
+import { Tool } from '@leanmcp/core';
+import { GPTApp } from '@leanmcp/ui';
+
+class MyService {
+  @Tool({ 
+    description: 'Example tool',
+    inputClass: MyInput
+  })
+  @GPTApp({ 
+    component: MyWidget,
+    widgetAccessible: true,
+    visibility: 'public'
+  })
+  async myTool(args: MyInput) {
+    return { result: 'data' };
+  }
+}
+```
+
+The `@Tool` decorator automatically detects the UI metadata added by `@GPTApp` and includes it in the tool definition.
+
+## Best Practices
+
+### 1. Widget Security
+
+Always specify CSP domains for widgets that make network requests:
+
+```typescript
+@GPTApp({
+  component: ApiWidget,
+  widgetAccessible: true,
+  csp: {
+    connect_domains: ['api.myservice.com'],
+    resource_domains: ['cdn.myservice.com']
+  }
+})
+```
+
+### 2. Private Tools for Helpers
+
+Use `visibility: 'private'` for tools that should only be called by widgets:
+
+```typescript
+@GPTApp({
+  component: InternalWidget,
+  visibility: 'private', // Hidden from model
+  widgetAccessible: true
+})
+```
+
+### 3. Helpful Invocation Messages
+
+Provide clear status messages:
+
+```typescript
+@GPTApp({
+  component: ReportWidget,
+  invocation: {
+    invoking: 'Crunching the numbers…',
+    invoked: 'Your report is ready!'
+  }
+})
+```
+
+### 4. Type Safety
+
+Use TypeScript interfaces for tool results:
+
+```typescript
+interface BoardResult {
+  tasks: Task[];
+  columns: Column[];
+}
+
+@Tool({ description: 'Show board' })
+@GPTApp({ component: BoardWidget })
+async showBoard(): Promise<BoardResult> {
+  // Implementation
+}
+```
+
+### 5. Component Separation
+
+Keep UI components in separate files:
+
+```
+src/
+  services/
+    kanban.service.ts   # Tool definitions
+  components/
+    KanbanBoard.tsx     # UI components
+```
+
+## Troubleshooting
+
+### Widget not displaying in ChatGPT
+
+1. Check that `reflect-metadata` is imported at app entry point
+2. Verify the resource URI is correct in tool metadata
+3. Ensure the component is exported properly
+4. Check that mimeType is `text/html+skybridge`
+
+### widgetAccessible not working
+
+1. Verify `widgetAccessible: true` is set
+2. Check that `window.openai.callTool` is available in the widget
+3. Ensure the widget is running in ChatGPT environment
+
+### CSP violations
+
+1. Add required domains to `csp.connect_domains` or `csp.resource_domains`
+2. Check browser console for CSP error messages
+3. Test in ChatGPT environment (CSP may not apply in local dev)
+
+### TypeScript errors
+
+Make sure `experimentalDecorators` and `emitDecoratorMetadata` are enabled:
+
+```json
+{
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  }
+}
+```
+
+## See Also
+
+- [@UIApp Decorator](/api/ui/ui-app-decorator) - General MCP UI decorator (without OpenAI-specific features)
+- [React Components](/api/ui/components) - Available UI components
+- [@Tool Decorator](/api/core/decorators#tool) - Core tool decorator
+- [ChatGPT Apps SDK](https://platform.openai.com/docs/guides/apps) - OpenAI documentation

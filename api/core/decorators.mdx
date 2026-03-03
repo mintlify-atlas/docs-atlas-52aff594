@@ -298,6 +298,10 @@ class ValidationExample {
 
 ### @Auth
 
+<Note>
+**Basic metadata decorator**: `@Auth` adds authentication metadata but does not enforce authentication. For full authentication with token verification, use [@Authenticated from @leanmcp/auth](/api/auth/authenticated-decorator).
+</Note>
+
 Adds authentication requirements to a class or method.
 
 ```typescript
@@ -340,6 +344,10 @@ class MixedService {
   }
 }
 ```
+
+<Note>
+The examples above add authentication metadata to tools but do not enforce authentication. To enforce authentication with token verification, use `@Authenticated` from `@leanmcp/auth`. See [Authentication Integration](/guides/auth-integration) for more details.
+</Note>
 
 ### @UserEnvs
 
