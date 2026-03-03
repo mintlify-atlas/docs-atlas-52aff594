@@ -1,0 +1,639 @@
+---
+title: 'Slack Integration Examples'
+description: 'Advanced Slack integrations with authentication, elicitation, and UI components'
+icon: 'slack'
+---
+
+This page demonstrates three advanced patterns for building Slack MCP servers with LeanMCP:
+
+1. **Slack with Authentication** - OAuth-protected Slack operations
+2. **Slack with Elicitation** - Smart form-based input collection
+3. **Slack with UI Components** - Rich dashboard interfaces
+
+## 1. Slack with Authentication
+
+Build a secure Slack MCP server with AWS Cognito authentication.
+
+<Steps>
+  <Step title="Set up authentication provider">
+    Configure AWS Cognito in your `mcp/config.ts`:
+
+    ```typescript mcp/config.ts
+    import { AuthProvider } from "@leanmcp/auth";
+
+    // Validate required configuration
+    if (!process.env.COGNITO_USER_POOL_ID || !process.env.COGNITO_CLIENT_ID) {
+      throw new Error('Missing AWS Cognito configuration');
+    }
+
+    // Initialize authentication provider
+    export const authProvider = new AuthProvider('cognito', {
+      region: process.env.AWS_REGION || 'us-east-1',
+      userPoolId: process.env.COGNITO_USER_POOL_ID,
+      clientId: process.env.COGNITO_CLIENT_ID,
+      clientSecret: process.env.COGNITO_CLIENT_SECRET
+    });
+
+    await authProvider.init();
+    ```
+  </Step>
+
+  <Step title="Create authenticated Slack service">
+    Use the `@Authenticated` decorator to protect your entire service:
+
+    ```typescript mcp/slack/index.ts
+    import { Tool, SchemaConstraint, Authenticated } from "@leanmcp/core";
+    import { authProvider } from "../config.js";
+
+    class SendMessageInput {
+      @SchemaConstraint({
+        description: 'Slack channel ID or name',
+        minLength: 1
+      })
+      channel!: string;
+
+      @SchemaConstraint({
+        description: 'Message text to send',
+        minLength: 1
+      })
+      text!: string;
+    }
+
+    @Authenticated(authProvider)
+    export class SlackService {
+      private slackToken: string;
+
+      constructor() {
+        this.slackToken = process.env.SLACK_BOT_TOKEN || 'simulated-token';
+      }
+
+      @Tool({ 
+        description: 'Send a message to a Slack channel',
+        inputClass: SendMessageInput
+      })
+      async sendMessage(args: SendMessageInput) {
+        // Authentication is automatically enforced
+        console.log(`Sending message to ${args.channel}: ${args.text}`);
+        
+        return {
+          success: true,
+          channel: args.channel,
+          timestamp: Date.now().toString(),
+          message: args.text
+        };
+      }
+
+      @Tool({ 
+        description: 'Search for messages across all channels',
+        inputClass: SearchMessagesInput
+      })
+      async searchMessages(args: SearchMessagesInput) {
+        return {
+          total: 2,
+          matches: [
+            {
+              channel: 'C1234567890',
+              user: 'U1234567890',
+              text: `Message containing ${args.query}`,
+              timestamp: '1699999999.123456',
+              permalink: 'https://workspace.slack.com/...'
+            }
+          ]
+        };
+      }
+    }
+    ```
+
+    <Note>
+      The `@Authenticated` decorator automatically validates tokens from `_meta.authorization.token` in MCP requests.
+    </Note>
+  </Step>
+
+  <Step title="Add public endpoints">
+    Create a separate service for unauthenticated operations:
+
+    ```typescript
+    export class PublicSlackService {
+      @Tool({ 
+        description: 'Get information about the Slack MCP service' 
+      })
+      async getServiceInfo() {
+        return {
+          name: 'Slack MCP Service',
+          version: '1.0.0',
+          authRequired: true,
+          features: [
+            'Send messages to channels',
+            'Search messages across workspace',
+            'Create new channels'
+          ]
+        };
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Create the server">
+    ```typescript main.ts
+    import 'dotenv/config';
+    import { createHTTPServer } from "@leanmcp/core";
+
+    await createHTTPServer({
+      name: 'slack-with-auth',
+      version: '1.0.0',
+      port: parseInt(process.env.PORT || '3000'),
+      cors: true,
+      logging: true
+    });
+    ```
+  </Step>
+</Steps>
+
+### Authentication Flow
+
+<CodeGroup>
+```json MCP Request with Auth
+{
+  "method": "tools/call",
+  "params": {
+    "name": "sendMessage",
+    "arguments": {
+      "channel": "#general",
+      "text": "Hello team!"
+    },
+    "_meta": {
+      "authorization": {
+        "type": "bearer",
+        "token": "your-jwt-token"
+      }
+    }
+  }
+}
+```
+
+```bash Environment Variables
+COGNITO_USER_POOL_ID=us-east-1_xxxxx
+COGNITO_CLIENT_ID=your_client_id
+COGNITO_CLIENT_SECRET=your_client_secret
+AWS_REGION=us-east-1
+SLACK_BOT_TOKEN=xoxb-your-token
+```
+</CodeGroup>
+
+---
+
+## 2. Slack with Elicitation
+
+Use intelligent forms to collect structured input from users before executing Slack operations.
+
+<Steps>
+  <Step title="Simple form elicitation">
+    Collect all required fields at once:
+
+    ```typescript mcp/slack/index.ts
+    import { Tool } from "@leanmcp/core";
+    import { Elicitation } from "@leanmcp/elicitation";
+
+    interface CreateChannelInput {
+      channelName?: string;
+      isPrivate?: boolean;
+      description?: string;
+    }
+
+    export class SlackService {
+      @Tool({ description: "Create a new Slack channel" })
+      @Elicitation({
+        title: "Create Slack Channel",
+        description: "Please provide the channel details",
+        fields: [
+          {
+            name: "channelName",
+            label: "Channel Name",
+            type: "text",
+            required: true,
+            placeholder: "e.g., team-announcements",
+            validation: {
+              pattern: "^[a-z0-9-]+$",
+              errorMessage: "Channel name must be lowercase alphanumeric with hyphens"
+            }
+          },
+          {
+            name: "isPrivate",
+            label: "Private Channel",
+            type: "boolean",
+            defaultValue: false,
+            helpText: "Private channels are only visible to invited members"
+          },
+          {
+            name: "description",
+            label: "Channel Description",
+            type: "textarea",
+            required: false,
+            placeholder: "What is this channel for?"
+          }
+        ]
+      })
+      async createChannel(args: CreateChannelInput) {
+        return {
+          success: true,
+          channelId: `C${Date.now()}`,
+          channelName: args.channelName,
+          message: `Channel ${args.channelName} created!`
+        };
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Conditional elicitation">
+    Only prompt for missing information:
+
+    ```typescript
+    @Tool({ description: "Send a message to a Slack channel" })
+    @Elicitation({
+      condition: (args) => !args.channelId,
+      title: "Select Channel",
+      description: "Which channel would you like to send to?",
+      fields: [
+        {
+          name: "channelId",
+          label: "Channel",
+          type: "select",
+          required: true,
+          options: [
+            { label: "#general", value: "C12345" },
+            { label: "#random", value: "C67890" },
+            { label: "#announcements", value: "C11111" }
+          ]
+        }
+      ]
+    })
+    async sendMessage(args: SendMessageInput) {
+      return {
+        success: true,
+        messageTs: `${Date.now()}.000000`,
+        message: "Message sent!"
+      };
+    }
+    ```
+  </Step>
+
+  <Step title="Builder API with validation">
+    Use the fluent builder for complex forms:
+
+    ```typescript
+    import { ElicitationFormBuilder, validation } from "@leanmcp/elicitation";
+
+    @Tool({ description: "Create user account" })
+    @Elicitation({
+      builder: (): any => new ElicitationFormBuilder()
+        .title("User Registration")
+        .description("Create a new user account")
+        .addEmailField("email", "Email Address", {
+          required: true,
+          placeholder: "user@example.com"
+        })
+        .addTextField("username", "Username", {
+          required: true,
+          validation: validation()
+            .minLength(3)
+            .maxLength(20)
+            .pattern("^[a-zA-Z0-9_]+$")
+            .errorMessage("Username must be 3-20 chars, alphanumeric")
+            .build()
+        })
+        .addTextField("password", "Password", {
+          required: true,
+          validation: validation()
+            .minLength(8)
+            .customValidator((value) => {
+              const hasUpper = /[A-Z]/.test(value);
+              const hasLower = /[a-z]/.test(value);
+              const hasNumber = /[0-9]/.test(value);
+              if (!hasUpper || !hasLower || !hasNumber) {
+                return "Password must contain uppercase, lowercase, and numbers";
+              }
+              return true;
+            })
+            .build()
+        })
+        .build()
+    })
+    async createUser(args: any) {
+      return {
+        success: true,
+        userId: `U${Date.now()}`,
+        username: args.username
+      };
+    }
+    ```
+  </Step>
+
+  <Step title="Multi-step elicitation">
+    Break complex workflows into steps:
+
+    ```typescript
+    @Tool({ description: "Deploy application to environment" })
+    @Elicitation({
+      strategy: "multi-step",
+      builder: (): any => [
+        {
+          title: "Step 1: Select Environment",
+          fields: [
+            {
+              name: "environment",
+              label: "Environment",
+              type: "select",
+              required: true,
+              options: [
+                { label: "Production", value: "prod" },
+                { label: "Staging", value: "staging" },
+                { label: "Development", value: "dev" }
+              ]
+            }
+          ]
+        },
+        {
+          title: "Step 2: Configuration",
+          fields: [
+            {
+              name: "replicas",
+              label: "Number of Replicas",
+              type: "number",
+              defaultValue: 3,
+              validation: {
+                min: 1,
+                max: 10
+              }
+            },
+            {
+              name: "autoScale",
+              label: "Enable Auto-scaling",
+              type: "boolean",
+              defaultValue: true
+            }
+          ],
+          // Only show for production
+          condition: (prev: any) => prev.environment === 'prod'
+        }
+      ]
+    })
+    async deployApp(args: DeployAppInput) {
+      return {
+        success: true,
+        environment: args.environment,
+        replicas: args.replicas || 1
+      };
+    }
+    ```
+  </Step>
+</Steps>
+
+---
+
+## 3. Slack with UI Components
+
+Build rich dashboards using React and MCP UI components.
+
+<Steps>
+  <Step title="Set up UI-enabled tools">
+    Add `@UIApp` decorator to expose React components:
+
+    ```typescript mcp/slack/index.ts
+    import { Tool } from '@leanmcp/core';
+    import { UIApp } from '@leanmcp/ui';
+
+    export class SlackService {
+      @Tool({ description: 'List all Slack channels' })
+      @UIApp({ component: './ChannelsList' })
+      async listChannels() {
+        const result = await this.client.conversations.list({
+          types: 'public_channel,private_channel',
+          exclude_archived: true,
+          limit: 200,
+        });
+
+        const channels = result.channels?.map(ch => ({
+          id: ch.id,
+          name: ch.name,
+          is_private: ch.is_private,
+          is_member: ch.is_member,
+          num_members: ch.num_members,
+          topic: ch.topic?.value || '',
+          purpose: ch.purpose?.value || '',
+        })) || [];
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ channels }, null, 2),
+          }],
+        };
+      }
+
+      @Tool({ description: 'Get recent messages from a channel' })
+      @UIApp({ component: './MessageViewer' })
+      async getMessages(input: GetMessagesInput) {
+        const result = await this.client.conversations.history({
+          channel: input.channel,
+          limit: input.limit || 20,
+        });
+
+        const messages = await Promise.all(
+          (result.messages || []).map(async msg => ({
+            ts: msg.ts,
+            user: msg.user,
+            text: msg.text,
+            thread_ts: msg.thread_ts,
+            reply_count: msg.reply_count || 0,
+          }))
+        );
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ messages }, null, 2),
+          }],
+        };
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Create React dashboard components">
+    Build interactive UIs with `@leanmcp/ui` components:
+
+    <Tabs>
+      <Tab title="Channels List">
+        ```tsx mcp/slack/ChannelsList.tsx
+        import React from 'react';
+        import { ToolDataGrid, RequireConnection } from '@leanmcp/ui';
+
+        export function ChannelsList() {
+          return (
+            <RequireConnection loading={<div>Loading...</div>}>
+              <div style={{ padding: '20px' }}>
+                <h1>Slack Channels</h1>
+                <ToolDataGrid
+                  dataTool="listChannels"
+                  transformData={(result: any) => ({
+                    rows: result.channels || [],
+                    total: (result.channels || []).length
+                  })}
+                  columns={[
+                    { key: 'name', header: 'Channel Name', width: '200px' },
+                    { key: 'is_private', header: 'Private', width: '100px' },
+                    { key: 'is_member', header: 'Member', width: '100px' },
+                    { key: 'num_members', header: 'Members', width: '100px' },
+                    { key: 'topic', header: 'Topic', width: '300px' },
+                  ]}
+                  refreshInterval={30000}
+                />
+              </div>
+            </RequireConnection>
+          );
+        }
+        ```
+      </Tab>
+
+      <Tab title="Message Viewer">
+        ```tsx mcp/slack/MessageViewer.tsx
+        import React, { useState } from 'react';
+        import { ToolDataGrid, RequireConnection } from '@leanmcp/ui';
+
+        export function MessageViewer() {
+          const [channelId, setChannelId] = useState('');
+          const [limit, setLimit] = useState(20);
+
+          return (
+            <RequireConnection loading={<div>Loading...</div>}>
+              <div style={{ padding: '20px' }}>
+                <h1>Slack Messages</h1>
+                
+                <div style={{ marginBottom: '20px' }}>
+                  <label>
+                    Channel ID:
+                    <input
+                      type="text"
+                      value={channelId}
+                      onChange={(e) => setChannelId(e.target.value)}
+                      placeholder="C1234567890"
+                      style={{ marginLeft: '10px', padding: '5px' }}
+                    />
+                  </label>
+                  
+                  <label style={{ marginLeft: '20px' }}>
+                    Limit:
+                    <input
+                      type="number"
+                      value={limit}
+                      onChange={(e) => setLimit(parseInt(e.target.value) || 20)}
+                      min="1"
+                      max="100"
+                      style={{ marginLeft: '10px', padding: '5px' }}
+                    />
+                  </label>
+                </div>
+
+                {channelId && (
+                  <ToolDataGrid
+                    toolName="getMessages"
+                    toolArgs={{ channel: channelId, limit }}
+                    dataPath="messages"
+                    columns={[
+                      { field: 'ts', headerName: 'Timestamp', width: 150 },
+                      { field: 'user', headerName: 'User', width: 150 },
+                      { field: 'text', headerName: 'Message', width: 500 },
+                      { field: 'reply_count', headerName: 'Replies', width: 100 },
+                    ]}
+                    autoRefresh={10000}
+                  />
+                )}
+              </div>
+            </RequireConnection>
+          );
+        }
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Build and run with UI">
+    ```bash
+    # Development with hot reload
+    leanmcp dev
+
+    # Production build
+    leanmcp build
+    npm start
+    ```
+  </Step>
+</Steps>
+
+## Key Features Comparison
+
+<CardGroup cols={3}>
+  <Card title="Authentication" icon="lock">
+    - Class-level `@Authenticated` decorator
+    - AWS Cognito / JWT support
+    - Automatic token validation
+    - Public/private endpoints
+  </Card>
+  
+  <Card title="Elicitation" icon="messages">
+    - Declarative form definitions
+    - Conditional field display
+    - Multi-step workflows
+    - Custom validation logic
+  </Card>
+  
+  <Card title="UI Components" icon="browser">
+    - React-based dashboards
+    - Real-time data grids
+    - Auto-refresh capabilities
+    - Interactive controls
+  </Card>
+</CardGroup>
+
+## Environment Setup
+
+<CodeGroup>
+```bash With Authentication
+COGNITO_USER_POOL_ID=us-east-1_xxxxx
+COGNITO_CLIENT_ID=your_client_id
+COGNITO_CLIENT_SECRET=your_client_secret
+AWS_REGION=us-east-1
+SLACK_BOT_TOKEN=xoxb-your-token
+PORT=3000
+```
+
+```bash With Elicitation
+SLACK_BOT_TOKEN=xoxb-your-token
+PORT=3000
+```
+
+```bash With UI
+SLACK_BOT_TOKEN=xoxb-your-token
+PORT=3001
+```
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="GitHub Roast" href="/examples/github-roast" icon="github">
+    OAuth integration with GitHub API
+  </Card>
+  
+  <Card title="Social Monitor" href="/examples/social-monitor" icon="chart-line">
+    Multi-platform dashboard with AI responses
+  </Card>
+  
+  <Card title="UI Components" href="/examples/ui-components" icon="palette">
+    Complete guide to MCP UI components
+  </Card>
+  
+  <Card title="Authentication Guide" href="/features/authentication" icon="shield">
+    Deep dive into authentication patterns
+  </Card>
+</CardGroup>

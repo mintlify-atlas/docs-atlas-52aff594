@@ -1,0 +1,369 @@
+---
+title: 'leanmcp create'
+description: 'Create a new MCP server project with interactive setup'
+icon: 'plus'
+---
+
+## Overview
+
+The `leanmcp create` command scaffolds a new MCP server project with production-ready templates and optional interactive setup.
+
+```bash
+leanmcp create <projectName> [options]
+```
+
+## Basic Usage
+
+<Steps>
+
+<Step title="Create a project">
+  ```bash
+  leanmcp create my-mcp-server
+  ```
+
+  This creates a new directory `my-mcp-server` with all necessary files.
+</Step>
+
+<Step title="Interactive prompts">
+  You'll be asked:
+  - Would you like to install dependencies now? (yes/no)
+  - Would you like to start the development server? (yes/no)
+</Step>
+
+<Step title="Start using your server">
+  ```bash
+  cd my-mcp-server
+  npm run dev
+  ```
+</Step>
+
+</Steps>
+
+## Options
+
+### `--allow-all`
+
+Skip all interactive confirmations and assume "Yes":
+
+```bash
+leanmcp create my-server --allow-all
+```
+
+This will:
+- Create the project
+- Install dependencies automatically
+- Start the development server
+
+### `--no-dashboard`
+
+Disable the dashboard UI at `/` and `/mcp` GET endpoints:
+
+```bash
+leanmcp create my-server --no-dashboard
+```
+
+The generated `main.ts` will include:
+
+```typescript
+await createHTTPServer({
+  name: "my-server",
+  version: "1.0.0",
+  port: 3001,
+  cors: true,
+  logging: true,
+  dashboard: false  // Dashboard disabled
+});
+```
+
+### `-i, --install`
+
+Install dependencies automatically without starting the dev server:
+
+```bash
+leanmcp create my-server --install
+```
+
+Non-interactive mode - installs dependencies, then exits.
+
+### `--no-install`
+
+Skip dependency installation entirely:
+
+```bash
+leanmcp create my-server --no-install
+```
+
+You'll need to run `npm install` manually later.
+
+### `--python`
+
+Create a Python MCP project instead of TypeScript:
+
+```bash
+leanmcp create my-server --python
+```
+
+<Note>
+Python projects require manual virtual environment setup:
+```bash
+cd my-server
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+python main.py
+```
+</Note>
+
+## Generated Project Structure
+
+### TypeScript Project
+
+```
+my-mcp-server/
+├── main.ts              # Entry point with HTTP server
+├── package.json         # Dependencies and scripts
+├── tsconfig.json        # TypeScript configuration
+├── .gitignore           # Git ignore rules
+├── .env                 # Environment variables
+├── README.md            # Project documentation
+└── mcp/                 # Services directory
+    └── example/
+        └── index.ts     # Example service
+```
+
+### Python Project
+
+```
+my-mcp-server/
+├── main.py              # Entry point with HTTP server
+├── requirements.txt     # Python dependencies
+├── .gitignore           # Git ignore rules
+├── .env                 # Environment variables
+└── README.md            # Project documentation
+```
+
+## Example: Generated Files
+
+### main.ts (TypeScript)
+
+```typescript
+import { config } from 'dotenv';
+import { createHTTPServer } from '@leanmcp/core';
+
+config();
+
+await createHTTPServer({
+  name: "my-mcp-server",
+  version: "1.0.0",
+  port: parseInt(process.env.PORT || '3001'),
+  cors: true,
+  logging: true,
+});
+```
+
+### mcp/example/index.ts
+
+```typescript
+import { Tool, Prompt, Resource, SchemaConstraint, Optional } from '@leanmcp/core';
+
+class GreetInput {
+  @SchemaConstraint({
+    description: 'Name to greet',
+    minLength: 1
+  })
+  name!: string;
+
+  @Optional()
+  @SchemaConstraint({
+    description: 'Language for greeting',
+    enum: ['en', 'es', 'fr'],
+    default: 'en'
+  })
+  language?: string;
+}
+
+export class Example {
+  @Tool({ 
+    description: 'Greet someone',
+    inputClass: GreetInput
+  })
+  async greet(args: GreetInput) {
+    const greetings = {
+      en: 'Hello',
+      es: 'Hola',
+      fr: 'Bonjour'
+    };
+    
+    const greeting = greetings[args.language || 'en'];
+    return { message: `${greeting}, ${args.name}!` };
+  }
+
+  @Prompt({ description: 'Generate a welcome prompt' })
+  welcomePrompt(args: { name?: string }) {
+    return {
+      messages: [{
+        role: 'user',
+        content: {
+          type: 'text',
+          text: `Say a warm welcome to ${args.name || 'our user'}!`
+        }
+      }]
+    };
+  }
+
+  @Resource({ description: 'Get service status' })
+  getStatus() {
+    return {
+      status: 'active',
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString()
+    };
+  }
+}
+```
+
+### package.json
+
+```json
+{
+  "name": "my-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP Server with Streamable HTTP Transport",
+  "type": "module",
+  "scripts": {
+    "dev": "leanmcp dev",
+    "build": "leanmcp build",
+    "start": "leanmcp start",
+    "start:node": "node dist/main.js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@leanmcp/core": "latest",
+    "@leanmcp/ui": "latest",
+    "@leanmcp/auth": "latest",
+    "dotenv": "^16.5.0"
+  },
+  "devDependencies": {
+    "@leanmcp/cli": "latest",
+    "@types/node": "^20.0.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.6.3"
+  }
+}
+```
+
+## Common Workflows
+
+### Create and Start Immediately
+
+```bash
+leanmcp create my-server --allow-all
+```
+
+This automatically:
+1. Creates the project
+2. Installs dependencies
+3. Starts the dev server
+
+### Create Without Dependencies
+
+```bash
+leanmcp create my-server --no-install
+cd my-server
+npm install
+npm run dev
+```
+
+### Create Python Project
+
+```bash
+leanmcp create my-server --python
+cd my-server
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
+
+## Terminal Output
+
+<CodeGroup>
+
+```bash Success
+$ leanmcp create my-mcp-server
+
+✔ Project my-mcp-server created!
+
+Success! Your MCP server is ready.
+
+To deploy to LeanMCP cloud:
+  cd my-mcp-server
+  leanmcp deploy .
+
+Need help? Join our Discord:
+  https://discord.com/invite/DsRcA3GwPy
+
+? Would you like to install dependencies now? (Y/n)
+✔ Dependencies installed successfully!
+
+? Would you like to start the development server? (Y/n)
+
+Starting development server...
+
+[HTTP][INFO] Server running on http://localhost:3001
+```
+
+```bash Non-interactive
+$ leanmcp create my-server --install
+
+✔ Project my-server created!
+
+Success! Your MCP server is ready.
+
+✔ Dependencies installed successfully!
+
+To start the development server:
+  cd my-server
+  npm run dev
+```
+
+</CodeGroup>
+
+## Error Handling
+
+### Project Already Exists
+
+```bash
+$ leanmcp create my-server
+✖ Folder my-server already exists.
+```
+
+**Solution:** Choose a different name or remove the existing directory.
+
+### Invalid Project Name
+
+Project names should follow npm naming conventions:
+- Lowercase letters, numbers, hyphens, underscores
+- No spaces or special characters
+
+```bash
+leanmcp create my-mcp-server  # ✓ Valid
+leanmcp create "My Server"    # ✗ Invalid
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Add Service" icon="layer-plus" href="/cli/add-service">
+    Add new services to your project
+  </Card>
+  <Card title="Dev Commands" icon="code" href="/cli/dev-commands">
+    Start developing with hot-reload
+  </Card>
+  <Card title="Deploy" icon="rocket" href="/guides/deployment">
+    Deploy to LeanMCP Cloud
+  </Card>
+  <Card title="Core Package" icon="cube" href="/api/core/decorators">
+    Learn about @leanmcp/core decorators
+  </Card>
+</CardGroup>

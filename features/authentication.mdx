@@ -1,0 +1,292 @@
+---
+title: Authentication
+description: Add authentication to your MCP server with Auth0, Clerk, Cognito, and more
+---
+
+LeanMCP provides built-in authentication support with the `@Authenticated` decorator. Protect your MCP tools, prompts, and resources with JWT-based authentication using popular providers.
+
+## Quick Start
+
+```typescript
+import { AuthProvider, Authenticated } from '@leanmcp/auth';
+import { Tool } from '@leanmcp/core';
+
+const authProvider = new AuthProvider('auth0', {
+  domain: 'your-tenant.auth0.com',
+  clientId: 'your-client-id',
+  audience: 'your-api-identifier'
+});
+
+export class SecureService {
+  @Tool({ description: 'Analyze sentiment' })
+  @Authenticated(authProvider, { getUser: true })
+  async analyzeSentiment(args: { text: string }) {
+    // authUser is automatically available
+    console.log('User ID:', authUser.sub);
+    console.log('Email:', authUser.email);
+    
+    return { sentiment: 'positive' };
+  }
+}
+```
+
+## Authentication Providers
+
+LeanMCP supports multiple authentication providers out of the box:
+
+<Tabs>
+  <Tab title="Auth0">
+    ```typescript
+    import { AuthProvider } from '@leanmcp/auth';
+
+    const authProvider = new AuthProvider('auth0', {
+      domain: 'your-tenant.auth0.com',
+      clientId: 'your-client-id',
+      clientSecret: 'your-client-secret', // Optional
+      audience: 'your-api-identifier',
+      scopes: 'openid profile email offline_access'
+    });
+    ```
+
+    **Required Configuration:**
+    - `domain`: Your Auth0 tenant domain
+    - `clientId`: Application client ID
+    - `audience`: API identifier
+
+    **Token Verification:**
+    Auth0 tokens are verified using JWKS from `https://{domain}/.well-known/jwks.json`
+
+    Source: `packages/auth/src/providers/auth0.ts:6`
+  </Tab>
+
+  <Tab title="Clerk">
+    ```typescript
+    import { AuthProvider } from '@leanmcp/auth';
+
+    // Session Mode (default)
+    const authProvider = new AuthProvider('clerk', {
+      frontendApi: 'clerk.example.com',
+      secretKey: 'sk_test_...',
+    });
+
+    // OAuth Mode (with refresh tokens)
+    const authProvider = new AuthProvider('clerk', {
+      frontendApi: 'clerk.example.com',
+      secretKey: 'sk_test_...',
+      clientId: 'your-client-id',
+      clientSecret: 'your-client-secret',
+      redirectUri: 'http://localhost:3000/callback'
+    });
+    ```
+
+    **Session Mode vs OAuth Mode:**
+    - Session Mode: Default, no refresh tokens
+    - OAuth Mode: Enable by providing `clientId`, `clientSecret`, and `redirectUri`
+
+    Source: `packages/auth/src/providers/clerk.ts:12`
+  </Tab>
+
+  <Tab title="Cognito">
+    ```typescript
+    import { AuthProvider } from '@leanmcp/auth';
+
+    const authProvider = new AuthProvider('cognito', {
+      region: 'us-east-1',
+      userPoolId: 'us-east-1_XXXXXXXXX',
+      clientId: 'your-client-id',
+      clientSecret: 'your-client-secret' // Optional
+    });
+    ```
+
+    **Required Configuration:**
+    - `region`: AWS region (e.g., 'us-east-1')
+    - `userPoolId`: Cognito User Pool ID
+    - `clientId`: App client ID
+
+    **Secret Hash:**
+    If your Cognito app client has a secret, it's automatically calculated using HMAC-SHA256.
+
+    Source: `packages/auth/src/providers/cognito.ts:14`
+  </Tab>
+</Tabs>
+
+## Using @Authenticated Decorator
+
+### Protect Individual Methods
+
+Apply to specific tools, prompts, or resources:
+
+```typescript
+@Tool({ description: 'Send Slack message' })
+@Authenticated(authProvider, { getUser: true })
+async sendMessage(args: { channel: string; text: string }) {
+  console.log('Authenticated user:', authUser.email);
+  // Send message
+}
+```
+
+### Protect Entire Service
+
+Apply to the class to protect all methods:
+
+```typescript
+@Authenticated(authProvider)
+export class SlackService {
+  @Tool({ description: 'Send message' })
+  async sendMessage(args: SendMessageInput) {
+    // All methods require authentication
+    console.log('User:', authUser);
+  }
+
+  @Tool({ description: 'List channels' })
+  async listChannels() {
+    // Also protected
+    return { channels: [] };
+  }
+}
+```
+
+### Skip User Fetching
+
+For performance, you can verify tokens without fetching user info:
+
+```typescript
+@Tool({ description: 'Public tool' })
+@Authenticated(authProvider, { getUser: false })
+async publicTool(args: PublicInput) {
+  // Only verifies token, doesn't fetch user
+  // authUser will be undefined
+}
+```
+
+## The authUser Global
+
+When `getUser: true` (default), the authenticated user is available as a global variable:
+
+```typescript
+@Authenticated(authProvider, { getUser: true })
+async myTool(args: any) {
+  // Access user properties
+  console.log('User ID:', authUser.sub);
+  console.log('Email:', authUser.email);
+  console.log('Name:', authUser.name);
+  
+  // Full user object
+  console.log('All attributes:', authUser.attributes);
+}
+```
+
+<Note>
+The `authUser` global is **concurrency-safe** using AsyncLocalStorage. Each request has its own isolated context, preventing race conditions in high-concurrency scenarios.
+
+Source: `packages/auth/src/decorators.ts:25`
+</Note>
+
+## Token Format
+
+Clients must send tokens in the MCP request `_meta` field:
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "sendMessage",
+    "arguments": {
+      "channel": "#general",
+      "text": "Hello!"
+    },
+    "_meta": {
+      "authorization": {
+        "type": "bearer",
+        "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+      }
+    }
+  }
+}
+```
+
+## OAuth Flow (Client-Side)
+
+LeanMCP provides an OAuth client for browser-based authentication:
+
+```typescript
+import { OAuthClient } from '@leanmcp/auth';
+
+const client = new OAuthClient({
+  serverUrl: 'https://mcp.example.com',
+  scopes: ['read', 'write'],
+  clientName: 'My MCP Client'
+});
+
+// Start browser-based OAuth flow
+await client.authenticate();
+
+// Get token for API calls
+const token = await client.getValidToken();
+
+// Auto-refresh is enabled by default
+const freshToken = await client.getValidToken();
+```
+
+### PKCE Support
+
+PKCE (Proof Key for Code Exchange) is enabled by default for secure OAuth flows:
+
+```typescript
+const client = new OAuthClient({
+  serverUrl: 'https://mcp.example.com',
+  pkceEnabled: true, // Default
+  autoRefresh: true,  // Default
+  refreshBuffer: 60   // Refresh 60s before expiry
+});
+```
+
+Source: `packages/auth/src/client/oauth-client.ts:86`
+
+## Error Handling
+
+```typescript
+import { AuthenticationError } from '@leanmcp/auth';
+
+try {
+  await myAuthenticatedTool(args);
+} catch (error) {
+  if (error instanceof AuthenticationError) {
+    console.error('Auth error:', error.code);
+    // error.code: 'MISSING_TOKEN' | 'INVALID_TOKEN' | 'VERIFICATION_FAILED'
+  }
+}
+```
+
+## Environment Variables
+
+Providers support environment variables for configuration:
+
+```bash
+# Auth0
+AUTH0_DOMAIN=your-tenant.auth0.com
+AUTH0_CLIENT_ID=your-client-id
+AUTH0_CLIENT_SECRET=your-client-secret
+AUTH0_AUDIENCE=your-api-identifier
+
+# Clerk
+CLERK_FRONTEND_API=clerk.example.com
+CLERK_SECRET_KEY=sk_test_...
+
+# Cognito
+AWS_REGION=us-east-1
+COGNITO_USER_POOL_ID=us-east-1_XXXXXXXXX
+COGNITO_CLIENT_ID=your-client-id
+COGNITO_CLIENT_SECRET=your-client-secret
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Multi-Tenancy" icon="users" href="/features/multi-tenancy">
+    Isolate data per user or organization
+  </Card>
+  <Card title="Env Injection" icon="key" href="/features/env-injection">
+    Request-scoped environment variables
+  </Card>
+</CardGroup>

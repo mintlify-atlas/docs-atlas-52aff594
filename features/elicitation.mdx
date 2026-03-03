@@ -1,0 +1,476 @@
+---
+title: Elicitation (Human-in-the-Loop)
+description: Collect user input with forms, multi-step workflows, and validation
+---
+
+Elicitation enables MCP tools to request human input when needed. Use the `@Elicitation` decorator to create forms, multi-step wizards, and conditional prompts.
+
+## Quick Start
+
+```typescript
+import { Tool } from '@leanmcp/core';
+import { Elicitation } from '@leanmcp/elicitation';
+
+@Tool({ description: 'Create Slack channel' })
+@Elicitation({
+  title: 'Create Channel',
+  fields: [
+    { name: 'channelName', label: 'Channel Name', type: 'text', required: true },
+    { name: 'isPrivate', label: 'Private Channel', type: 'boolean', defaultValue: false }
+  ]
+})
+async createChannel(args: { channelName?: string; isPrivate?: boolean }) {
+  // Method only executes after user provides required fields
+  console.log('Creating channel:', args.channelName);
+  return { success: true };
+}
+```
+
+## Form Fields
+
+### Field Types
+
+Supported field types:
+
+```typescript
+type FieldType =
+  | 'text'        // Single-line text input
+  | 'textarea'    // Multi-line text input
+  | 'number'      // Numeric input
+  | 'boolean'     // Checkbox
+  | 'select'      // Dropdown (single choice)
+  | 'multiselect' // Multi-select dropdown
+  | 'date'        // Date picker
+  | 'email'       // Email input with validation
+  | 'url';        // URL input with validation
+```
+
+Source: `packages/elicitation/src/types.ts:25`
+
+### Field Configuration
+
+```typescript
+interface ElicitationField {
+  name: string;                  // Field identifier
+  label: string;                 // Display label
+  type: FieldType;               // Input type
+  description?: string;          // Help text
+  required?: boolean;            // Is field required?
+  defaultValue?: any;            // Default value
+  options?: Array<{              // For select/multiselect
+    label: string;
+    value: any;
+  }>;
+  validation?: FieldValidation;  // Validation rules
+  placeholder?: string;          // Input placeholder
+  helpText?: string;             // Additional help text
+}
+```
+
+Source: `packages/elicitation/src/types.ts:22`
+
+### Text Fields
+
+```typescript
+@Elicitation({
+  title: 'Send Message',
+  fields: [
+    {
+      name: 'message',
+      label: 'Message',
+      type: 'text',
+      required: true,
+      placeholder: 'Enter your message',
+      helpText: 'This will be sent to all subscribers'
+    }
+  ]
+})
+async sendMessage(args: { message?: string }) {
+  // ...
+}
+```
+
+### Select Fields
+
+```typescript
+@Elicitation({
+  title: 'Deploy Application',
+  fields: [
+    {
+      name: 'environment',
+      label: 'Environment',
+      type: 'select',
+      required: true,
+      options: [
+        { label: 'Development', value: 'dev' },
+        { label: 'Staging', value: 'staging' },
+        { label: 'Production', value: 'prod' }
+      ]
+    }
+  ]
+})
+async deploy(args: { environment?: string }) {
+  // ...
+}
+```
+
+### Number Fields
+
+```typescript
+@Elicitation({
+  fields: [
+    {
+      name: 'replicas',
+      label: 'Number of Replicas',
+      type: 'number',
+      defaultValue: 3,
+      validation: {
+        min: 1,
+        max: 10,
+        errorMessage: 'Must be between 1 and 10'
+      }
+    }
+  ]
+})
+async scale(args: { replicas?: number }) {
+  // ...
+}
+```
+
+## Validation
+
+### Built-in Validation
+
+```typescript
+interface FieldValidation {
+  min?: number;              // Minimum value (for numbers)
+  max?: number;              // Maximum value (for numbers)
+  minLength?: number;        // Minimum length (for strings)
+  maxLength?: number;        // Maximum length (for strings)
+  pattern?: string;          // Regex pattern
+  customValidator?: (value: any) => boolean | string;
+  errorMessage?: string;     // Custom error message
+}
+```
+
+Source: `packages/elicitation/src/types.ts:47`
+
+### Validation Examples
+
+```typescript
+import { validation } from '@leanmcp/elicitation';
+
+@Elicitation({
+  fields: [
+    {
+      name: 'username',
+      label: 'Username',
+      type: 'text',
+      required: true,
+      validation: validation()
+        .minLength(3)
+        .maxLength(20)
+        .pattern('^[a-zA-Z0-9_]+$')
+        .errorMessage('Username must be 3-20 alphanumeric characters')
+        .build()
+    },
+    {
+      name: 'age',
+      label: 'Age',
+      type: 'number',
+      validation: validation()
+        .min(18)
+        .max(120)
+        .errorMessage('Must be between 18 and 120')
+        .build()
+    },
+    {
+      name: 'email',
+      label: 'Email',
+      type: 'email',
+      validation: validation()
+        .customValidator((value) => {
+          return value.endsWith('@company.com') || 'Must use company email';
+        })
+        .build()
+    }
+  ]
+})
+async createUser(args: any) {
+  // ...
+}
+```
+
+Source: `packages/elicitation/src/builders/form-builder.ts:226`
+
+## Conditional Elicitation
+
+Only show the form when certain conditions are met:
+
+```typescript
+@Tool({ description: 'Send message' })
+@Elicitation({
+  condition: (args) => !args.channelId, // Only elicit if missing
+  title: 'Select Channel',
+  fields: [
+    {
+      name: 'channelId',
+      label: 'Channel',
+      type: 'select',
+      required: true,
+      options: [
+        { label: '#general', value: 'C123' },
+        { label: '#random', value: 'C456' }
+      ]
+    }
+  ]
+})
+async sendMessage(args: { channelId?: string; text: string }) {
+  // If channelId is provided, skip elicitation
+  // If missing, show channel selector
+}
+```
+
+Source: `packages/elicitation/src/decorators.ts:48`
+
+## Multi-Step Elicitation
+
+Create wizard-like flows with multiple steps:
+
+```typescript
+import { ElicitationStep } from '@leanmcp/elicitation';
+
+@Tool({ description: 'Deploy application' })
+@Elicitation({
+  strategy: 'multi-step',
+  builder: () => [
+    {
+      title: 'Step 1: Select Environment',
+      description: 'Choose deployment target',
+      fields: [
+        {
+          name: 'environment',
+          label: 'Environment',
+          type: 'select',
+          required: true,
+          options: [
+            { label: 'Development', value: 'dev' },
+            { label: 'Production', value: 'prod' }
+          ]
+        }
+      ]
+    },
+    {
+      title: 'Step 2: Configure Resources',
+      fields: [
+        { name: 'replicas', label: 'Replicas', type: 'number', defaultValue: 3 },
+        { name: 'memory', label: 'Memory (GB)', type: 'number', defaultValue: 2 }
+      ],
+      condition: (previousValues) => previousValues.environment === 'prod'
+    },
+    {
+      title: 'Step 3: Confirm',
+      fields: [
+        { name: 'confirm', label: 'Deploy now?', type: 'boolean', required: true }
+      ]
+    }
+  ]
+})
+async deployApp(args: any) {
+  // Receives all values from all steps
+  console.log('Environment:', args.environment);
+  console.log('Replicas:', args.replicas);
+  console.log('Confirmed:', args.confirm);
+}
+```
+
+Source: `packages/elicitation/src/decorators.ts:61`
+
+## Form Builder API
+
+Use the fluent builder for complex forms:
+
+```typescript
+import { ElicitationFormBuilder } from '@leanmcp/elicitation';
+
+@Elicitation({
+  builder: () => new ElicitationFormBuilder()
+    .title('Create Slack Channel')
+    .description('Configure your new channel')
+    .addTextField('channelName', 'Channel Name', {
+      required: true,
+      placeholder: '#general',
+      validation: validation()
+        .pattern('^[a-z0-9-_]+$')
+        .maxLength(80)
+        .build()
+    })
+    .addBooleanField('isPrivate', 'Private Channel', {
+      defaultValue: false
+    })
+    .addSelectField('team', 'Team', [
+      { label: 'Engineering', value: 'eng' },
+      { label: 'Marketing', value: 'mkt' },
+      { label: 'Sales', value: 'sales' }
+    ])
+    .addTextAreaField('description', 'Description', {
+      placeholder: 'What is this channel for?',
+      validation: validation().maxLength(500).build()
+    })
+    .build()
+})
+async createChannel(args: any) {
+  // ...
+}
+```
+
+Source: `packages/elicitation/src/builders/form-builder.ts:18`
+
+### Available Builder Methods
+
+```typescript
+class ElicitationFormBuilder {
+  title(title: string): this
+  description(description: string): this
+  condition(condition: (args: any) => boolean): this
+  
+  addTextField(name, label, options?): this
+  addTextAreaField(name, label, options?): this
+  addNumberField(name, label, options?): this
+  addBooleanField(name, label, options?): this
+  addSelectField(name, label, options, fieldOptions?): this
+  addMultiSelectField(name, label, options, fieldOptions?): this
+  addEmailField(name, label, options?): this
+  addUrlField(name, label, options?): this
+  addDateField(name, label, options?): this
+  addCustomField(field: ElicitationField): this
+  
+  build(): ElicitationConfig
+}
+```
+
+## Dynamic Forms
+
+Build forms dynamically based on context:
+
+```typescript
+@Elicitation({
+  builder: (context) => {
+    const fields = [
+      { name: 'message', label: 'Message', type: 'text', required: true }
+    ];
+    
+    // Add channel selector if not provided
+    if (!context.args.channelId) {
+      fields.unshift({
+        name: 'channelId',
+        label: 'Channel',
+        type: 'select',
+        required: true,
+        options: getChannelOptions() // Dynamic options
+      });
+    }
+    
+    return {
+      title: 'Send Message',
+      fields
+    };
+  }
+})
+async sendMessage(args: any) {
+  // ...
+}
+```
+
+## Error Handling
+
+```typescript
+import { ElicitationError } from '@leanmcp/elicitation';
+
+try {
+  await elicitUserInput();
+} catch (error) {
+  if (error instanceof ElicitationError) {
+    console.error('Elicitation error:', error.code);
+    console.error('Details:', error.details);
+  }
+}
+```
+
+Source: `packages/elicitation/src/types.ts:116`
+
+## Best Practices
+
+### 1. Use Clear Labels and Help Text
+
+```typescript
+// Good
+{
+  name: 'apiKey',
+  label: 'OpenAI API Key',
+  type: 'text',
+  helpText: 'Found at https://platform.openai.com/api-keys',
+  placeholder: 'sk-...',
+  required: true
+}
+
+// Bad
+{
+  name: 'key',
+  label: 'Key',
+  type: 'text'
+}
+```
+
+### 2. Provide Sensible Defaults
+
+```typescript
+{
+  name: 'replicas',
+  label: 'Number of Replicas',
+  type: 'number',
+  defaultValue: 3, // Good default
+  validation: validation().min(1).max(10).build()
+}
+```
+
+### 3. Validate User Input
+
+Always validate user input to prevent errors:
+
+```typescript
+{
+  name: 'email',
+  label: 'Email Address',
+  type: 'email',
+  validation: validation()
+    .pattern('^[^@]+@[^@]+\\.[^@]+$')
+    .errorMessage('Please enter a valid email')
+    .build()
+}
+```
+
+### 4. Use Conditional Logic
+
+Only ask for what you need:
+
+```typescript
+@Elicitation({
+  condition: (args) => !args.userId,
+  fields: [{ name: 'userId', label: 'User ID', type: 'text', required: true }]
+})
+async getUser(args: { userId?: string }) {
+  // Only elicit if userId is missing
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="shield-halved" href="/features/authentication">
+    Secure your elicitation flows
+  </Card>
+  <Card title="Multi-Tenancy" icon="users" href="/features/multi-tenancy">
+    Per-user form data
+  </Card>
+</CardGroup>

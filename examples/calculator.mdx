@@ -1,0 +1,387 @@
+---
+title: 'Calculator Service'
+description: 'Build a calculator with multiple operations and error handling'
+icon: 'calculator'
+---
+
+## Overview
+
+This example demonstrates how to build a calculator service with multiple operations using the LeanMCP SDK. You'll learn how to:
+
+- Create multiple tools that share input schemas
+- Add validation constraints to prevent errors
+- Implement proper error handling
+- Handle edge cases like division by zero
+- Structure related operations in one service
+
+## Complete Example
+
+This example is based on the calculator pattern from the [LeanMCP README](https://github.com/LeanMCP/leanmcp-sdk).
+
+<Steps>
+  <Step title="Define Shared Input Schema">
+    Create a reusable input schema for mathematical operations:
+
+    ```typescript
+    import { Tool, SchemaConstraint } from "@leanmcp/core";
+
+    class CalculatorInput {
+      @SchemaConstraint({
+        description: 'First number',
+        minimum: -1000000,
+        maximum: 1000000
+      })
+      a!: number;
+
+      @SchemaConstraint({
+        description: 'Second number',
+        minimum: -1000000,
+        maximum: 1000000
+      })
+      b!: number;
+    }
+    ```
+
+    **Key points:**
+    - Same schema is reused across multiple operations
+    - `minimum` and `maximum` prevent overflow errors
+    - Clear descriptions help AI agents understand parameters
+  </Step>
+
+  <Step title="Define Output Schema">
+    Create a consistent output structure:
+
+    ```typescript
+    class CalculatorOutput {
+      @SchemaConstraint({ description: 'Calculation result' })
+      result!: number;
+    }
+    ```
+
+    **Key points:**
+    - Simple, consistent output format
+    - All operations return the same structure
+    - Easy to extend with additional fields
+  </Step>
+
+  <Step title="Implement Basic Operations">
+    Create tools for addition, subtraction, and multiplication:
+
+    ```typescript
+    export class CalculatorService {
+      @Tool({ 
+        description: 'Add two numbers',
+        inputClass: CalculatorInput
+      })
+      async add(args: CalculatorInput): Promise<CalculatorOutput> {
+        return { result: args.a + args.b };
+      }
+
+      @Tool({ 
+        description: 'Subtract two numbers',
+        inputClass: CalculatorInput
+      })
+      async subtract(args: CalculatorInput): Promise<CalculatorOutput> {
+        return { result: args.a - args.b };
+      }
+
+      @Tool({ 
+        description: 'Multiply two numbers',
+        inputClass: CalculatorInput
+      })
+      async multiply(args: CalculatorInput): Promise<CalculatorOutput> {
+        return { result: args.a * args.b };
+      }
+    }
+    ```
+
+    **Key points:**
+    - Each operation is a separate tool
+    - All use the same `CalculatorInput` schema
+    - Simple, focused implementations
+  </Step>
+
+  <Step title="Add Error Handling">
+    Implement division with proper error handling:
+
+    ```typescript
+    @Tool({ 
+      description: 'Divide two numbers',
+      inputClass: CalculatorInput
+    })
+    async divide(args: CalculatorInput): Promise<CalculatorOutput> {
+      if (args.b === 0) {
+        throw new Error('Division by zero is not allowed');
+      }
+      return { result: args.a / args.b };
+    }
+    ```
+
+    **Key points:**
+    - Check for edge cases before calculation
+    - Throw clear, descriptive errors
+    - Errors are automatically handled by the MCP framework
+  </Step>
+
+  <Step title="Add Advanced Operations">
+    Extend with more complex operations:
+
+    ```typescript
+    @Tool({ 
+      description: 'Calculate power (a raised to b)',
+      inputClass: CalculatorInput
+    })
+    async power(args: CalculatorInput): Promise<CalculatorOutput> {
+      if (args.a === 0 && args.b < 0) {
+        throw new Error('Cannot raise zero to a negative power');
+      }
+      return { result: Math.pow(args.a, args.b) };
+    }
+
+    @Tool({ 
+      description: 'Calculate modulo (a mod b)',
+      inputClass: CalculatorInput
+    })
+    async modulo(args: CalculatorInput): Promise<CalculatorOutput> {
+      if (args.b === 0) {
+        throw new Error('Modulo by zero is not allowed');
+      }
+      return { result: args.a % args.b };
+    }
+    ```
+
+    **Key points:**
+    - Validate mathematical constraints
+    - Handle special cases appropriately
+    - Keep error messages user-friendly
+  </Step>
+
+  <Step title="Create the Server">
+    Set up your server entry point:
+
+    ```typescript
+    import { createHTTPServer } from "@leanmcp/core";
+
+    await createHTTPServer({
+      name: "calculator-service",
+      version: "1.0.0",
+      port: 8080,
+      cors: true,
+      logging: true
+    });
+
+    console.log("Calculator Service running on port 8080");
+    ```
+  </Step>
+</Steps>
+
+## Project Structure
+
+```
+calculator-service/
+├── main.ts                          # Server entry point
+├── package.json
+├── tsconfig.json
+└── mcp/
+    └── calculator/
+        └── index.ts                 # Calculator service
+```
+
+## Testing the Service
+
+Start your server:
+
+```bash
+npm start
+```
+
+### Example Operations
+
+**Addition:**
+```json
+{
+  "name": "add",
+  "arguments": {
+    "a": 15,
+    "b": 27
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "result": 42
+}
+```
+
+**Division:**
+```json
+{
+  "name": "divide",
+  "arguments": {
+    "a": 100,
+    "b": 4
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "result": 25
+}
+```
+
+**Division by zero (error case):**
+```json
+{
+  "name": "divide",
+  "arguments": {
+    "a": 10,
+    "b": 0
+  }
+}
+```
+
+**Error response:**
+```json
+{
+  "error": {
+    "message": "Division by zero is not allowed"
+  }
+}
+```
+
+**Power operation:**
+```json
+{
+  "name": "power",
+  "arguments": {
+    "a": 2,
+    "b": 8
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "result": 256
+}
+```
+
+## Enhanced Calculator with History
+
+You can extend the calculator to track operation history:
+
+```typescript
+export class CalculatorService {
+  private history: Array<{
+    operation: string;
+    inputs: CalculatorInput;
+    result: number;
+    timestamp: string;
+  }> = [];
+
+  @Tool({ 
+    description: 'Add two numbers',
+    inputClass: CalculatorInput
+  })
+  async add(args: CalculatorInput): Promise<CalculatorOutput> {
+    const result = args.a + args.b;
+    this.recordHistory('add', args, result);
+    return { result };
+  }
+
+  @Tool({ description: 'Get calculation history' })
+  async getHistory() {
+    return {
+      operations: this.history,
+      count: this.history.length
+    };
+  }
+
+  @Tool({ description: 'Clear calculation history' })
+  async clearHistory() {
+    this.history = [];
+    return { success: true };
+  }
+
+  private recordHistory(operation: string, inputs: CalculatorInput, result: number) {
+    this.history.push({
+      operation,
+      inputs,
+      result,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+```
+
+## Advanced Input Validation
+
+Add custom validation for specific use cases:
+
+```typescript
+class ComplexCalculatorInput {
+  @SchemaConstraint({
+    description: 'First number',
+    minimum: -1000000,
+    maximum: 1000000
+  })
+  a!: number;
+
+  @SchemaConstraint({
+    description: 'Second number',
+    minimum: -1000000,
+    maximum: 1000000
+  })
+  b!: number;
+
+  @Optional()
+  @SchemaConstraint({
+    description: 'Precision (decimal places)',
+    minimum: 0,
+    maximum: 10,
+    default: 2
+  })
+  precision?: number;
+}
+
+@Tool({ 
+  description: 'Divide with custom precision',
+  inputClass: ComplexCalculatorInput
+})
+async dividePrecise(args: ComplexCalculatorInput): Promise<CalculatorOutput> {
+  if (args.b === 0) {
+    throw new Error('Division by zero is not allowed');
+  }
+  
+  const result = args.a / args.b;
+  const precision = args.precision ?? 2;
+  const rounded = Number(result.toFixed(precision));
+  
+  return { result: rounded };
+}
+```
+
+## Key Takeaways
+
+- **Shared Schemas**: Reuse input/output classes across related tools
+- **Error Handling**: Validate inputs and throw clear errors
+- **Edge Cases**: Handle special cases like division by zero
+- **Multiple Tools**: Group related operations in one service
+- **Extensibility**: Easy to add new operations or features
+- **Type Safety**: Schemas prevent invalid inputs at runtime
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Schema Validation" icon="shield-check" href="/concepts/schema-validation">
+    Learn advanced validation techniques
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/guides/error-handling">
+    Master error handling patterns
+  </Card>
+</CardGroup>

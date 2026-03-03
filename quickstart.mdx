@@ -1,80 +1,252 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start
+description: Get your first MCP server running in minutes with LeanMCP
 ---
 
-## Get started in three steps
+# Quick Start
 
-Get your documentation site running locally and make your first customization.
+Get your first MCP server up and running in just a few minutes. This guide will walk you through creating a sentiment analysis server.
 
-### Step 1: Set up your local environment
+<Steps>
+  <Step title="Create a new project">
+    Use the LeanMCP CLI to scaffold a new project with interactive prompts:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash
+    npx @leanmcp/cli create my-mcp-server
+    cd my-mcp-server
+    ```
 
-### Step 2: Deploy your changes
+    This generates a clean project structure:
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```
+    my-mcp-server/
+    ├── main.ts              # Entry point with HTTP server
+    ├── package.json         # Dependencies
+    ├── tsconfig.json        # TypeScript config
+    ├── .env                 # Environment variables
+    └── mcp/                 # Services directory
+        └── example/
+            └── index.ts     # Example service
+    ```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    <Note>
+      The CLI will prompt you to auto-install dependencies and optionally start the dev server.
+    </Note>
+  </Step>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+  <Step title="Install dependencies">
+    If you didn't auto-install during creation, install the dependencies now:
 
-### Step 3: Go live
+    ```bash
+    npm install
+    ```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    This installs:
+    - `@leanmcp/core` - Core MCP server runtime and decorators
+    - `@modelcontextprotocol/sdk` - Official MCP SDK
+    - `express` - HTTP server
+    - TypeScript and other development tools
+  </Step>
 
-## Next steps
+  <Step title="Explore the main entry point">
+    The generated `main.ts` file sets up your HTTP server:
 
-Now that you have your docs running, explore these key features:
+    ```typescript main.ts
+    import { createHTTPServer } from "@leanmcp/core";
+
+    // Services are automatically discovered from ./mcp directory
+    await createHTTPServer({
+      name: "sentiment-analysis-server",
+      version: "1.0.0",
+      port: 8080,
+      cors: true,
+      logging: true
+    });
+
+    console.log("\nSentiment Analysis MCP Server");
+    ```
+
+    <Note>
+      The `autoDiscover` feature automatically registers all services from the `mcp/` directory.
+    </Note>
+  </Step>
+
+  <Step title="Explore the example service">
+    The generated project includes an example sentiment analysis service in `mcp/example/index.ts`:
+
+    ```typescript mcp/example/index.ts
+    import { Tool, Optional, SchemaConstraint } from "@leanmcp/core";
+
+    // Define input schema as a TypeScript class
+    class AnalyzeSentimentInput {
+      @SchemaConstraint({
+        description: 'Text to analyze',
+        minLength: 1
+      })
+      text!: string;
+
+      @Optional()
+      @SchemaConstraint({
+        description: 'Language code',
+        enum: ['en', 'es', 'fr', 'de'],
+        default: 'en'
+      })
+      language?: string;
+    }
+
+    // Define output schema
+    class AnalyzeSentimentOutput {
+      @SchemaConstraint({ enum: ['positive', 'negative', 'neutral'] })
+      sentiment!: string;
+
+      @SchemaConstraint({ minimum: -1, maximum: 1 })
+      score!: number;
+
+      @SchemaConstraint({ minimum: 0, maximum: 1 })
+      confidence!: number;
+    }
+
+    export class SentimentService {
+      @Tool({ 
+        description: 'Analyze sentiment of text',
+        inputClass: AnalyzeSentimentInput
+      })
+      async analyzeSentiment(args: AnalyzeSentimentInput): Promise<AnalyzeSentimentOutput> {
+        const sentiment = this.detectSentiment(args.text);
+        
+        return {
+          sentiment: sentiment > 0 ? 'positive' : sentiment < 0 ? 'negative' : 'neutral',
+          score: sentiment,
+          confidence: Math.abs(sentiment)
+        };
+      }
+
+      private detectSentiment(text: string): number {
+        // Simple keyword-based sentiment analysis
+        const positiveWords = ['good', 'great', 'excellent', 'amazing', 'love'];
+        const negativeWords = ['bad', 'terrible', 'awful', 'horrible', 'hate'];
+        
+        let score = 0;
+        const words = text.toLowerCase().split(/\s+/);
+        
+        words.forEach(word => {
+          if (positiveWords.includes(word)) score += 0.3;
+          if (negativeWords.includes(word)) score -= 0.3;
+        });
+        
+        return Math.max(-1, Math.min(1, score));
+      }
+    }
+    ```
+
+    This service demonstrates:
+    - **Class-based schemas** - Type-safe input/output validation
+    - **Schema constraints** - Validation rules using decorators
+    - **Tool decorator** - Automatic tool registration
+  </Step>
+
+  <Step title="Start the server">
+    Run your MCP server:
+
+    ```bash
+    npm start
+    ```
+
+    Your server will start on `http://localhost:8080` with:
+    - **MCP endpoint**: `http://localhost:8080/mcp`
+    - **Health check**: `http://localhost:8080/health`
+
+    You should see output like:
+
+    ```
+    🚀 MCP HTTP Server running on http://localhost:8080
+    📡 MCP Endpoint: http://localhost:8080/mcp
+    🏥 Health Check: http://localhost:8080/health
+
+    Sentiment Analysis MCP Server
+    ```
+  </Step>
+
+  <Step title="Test your server">
+    Test the sentiment analysis tool using any MCP-compatible client, or use the MCP Inspector:
+
+    ```bash
+    npx @modelcontextprotocol/inspector http://localhost:8080/mcp
+    ```
+
+    Try analyzing some text:
+
+    ```json
+    {
+      "name": "analyzeSentiment",
+      "arguments": {
+        "text": "This is amazing! I love it.",
+        "language": "en"
+      }
+    }
+    ```
+
+    Expected response:
+
+    ```json
+    {
+      "sentiment": "positive",
+      "score": 0.6,
+      "confidence": 0.6
+    }
+    ```
+  </Step>
+</Steps>
+
+## What's Next?
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Core Concepts" icon="book" href="/concepts/tools">
+    Learn about Tools, Prompts, and Resources
+  </Card>
+  <Card title="Add Authentication" icon="lock" href="/features/authentication">
+    Secure your MCP server with authentication
+  </Card>
+  <Card title="Deployment" icon="rocket" href="/guides/deployment">
+    Deploy your server to production
+  </Card>
+  <Card title="Examples" icon="code" href="/examples/weather-service">
+    Explore more example implementations
+  </Card>
 </CardGroup>
 
+## Common Next Steps
+
+### Add a New Service
+
+Use the CLI to add additional services to your project:
+
+```bash
+leanmcp add weather
+```
+
+This creates `mcp/weather/index.ts` with boilerplate code and auto-registers it in your server.
+
+### Add Authentication
+
+Install the auth package and protect your tools:
+
+```bash
+npm install @leanmcp/auth
+```
+
+See the [Authentication Guide](/features/authentication) for complete setup instructions.
+
+### Deploy to Production
+
+Deploy your server using the LeanMCP CLI:
+
+```bash
+leanmcp deploy
+```
+
+See the [Deployment Guide](/guides/deployment) for detailed instructions.
+
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  Need help? Join our [Discord community](https://discord.com/invite/DsRcA3GwPy) or check out the [GitHub repository](https://github.com/LeanMCP/leanmcp-sdk).
 </Note>

@@ -1,0 +1,266 @@
+---
+title: 'Sentiment Analysis Service'
+description: 'Build a sentiment analysis tool with type-safe schemas and validation'
+icon: 'brain'
+---
+
+## Overview
+
+This example demonstrates how to build a sentiment analysis service using the LeanMCP SDK. You'll learn how to:
+
+- Define type-safe input and output schemas
+- Use schema constraints for validation
+- Create multiple tools in a single service
+- Implement simple sentiment detection logic
+
+## Complete Example
+
+This example is from the [basic-sentiment-tool](https://github.com/LeanMCP/leanmcp-sdk/tree/main/examples/basic-sentiment-tool) in the LeanMCP repository.
+
+<Steps>
+  <Step title="Define Input Schema">
+    Create a class with schema constraints to define what inputs your tool accepts:
+
+    ```typescript
+    import { Tool, Optional, SchemaConstraint } from "@leanmcp/core";
+
+    class AnalyzeSentimentInput {
+      @SchemaConstraint({
+        description: 'Text to analyze',
+        minLength: 1
+      })
+      text!: string;
+      
+      @Optional()
+      @SchemaConstraint({
+        description: 'Language code',
+        enum: ['en', 'es', 'fr', 'de'],
+        default: 'en'
+      })
+      language?: string;
+    }
+    ```
+
+    **Key points:**
+    - `@SchemaConstraint` adds validation rules
+    - `@Optional()` marks optional parameters
+    - `enum` restricts values to specific options
+    - `minLength` ensures non-empty strings
+  </Step>
+
+  <Step title="Define Output Schema">
+    Create a class that defines the structure of your tool's response:
+
+    ```typescript
+    class AnalyzeSentimentOutput {
+      @SchemaConstraint({
+        enum: ['positive', 'negative', 'neutral']
+      })
+      sentiment!: string;
+      
+      @SchemaConstraint({
+        minimum: -1,
+        maximum: 1
+      })
+      score!: number;
+      
+      @SchemaConstraint({
+        minimum: 0,
+        maximum: 1
+      })
+      confidence!: number;
+      
+      language!: string;
+    }
+    ```
+
+    **Key points:**
+    - Output schema ensures consistent response format
+    - `minimum` and `maximum` define valid ranges
+    - Type safety prevents runtime errors
+  </Step>
+
+  <Step title="Implement the Service">
+    Create your service class with the `@Tool` decorator:
+
+    ```typescript
+    export class SentimentAnalysisService {
+      @Tool({ 
+        description: 'Analyze sentiment of text',
+        inputClass: AnalyzeSentimentInput
+      })
+      async analyzeSentiment(args: AnalyzeSentimentInput): Promise<AnalyzeSentimentOutput> {
+        const sentiment = this.detectSentiment(args.text);
+        
+        return {
+          sentiment: sentiment > 0 ? 'positive' : sentiment < 0 ? 'negative' : 'neutral',
+          score: sentiment,
+          confidence: Math.abs(sentiment),
+          language: args.language || 'en'
+        };
+      }
+      
+      private detectSentiment(text: string): number {
+        const positiveWords = ['good', 'great', 'excellent', 'amazing', 'wonderful', 'love', 'best'];
+        const negativeWords = ['bad', 'terrible', 'awful', 'horrible', 'hate', 'worst', 'poor'];
+        
+        let score = 0;
+        const words = text.toLowerCase().split(/\s+/);
+        
+        words.forEach(word => {
+          if (positiveWords.includes(word)) score += 0.3;
+          if (negativeWords.includes(word)) score -= 0.3;
+        });
+        
+        return Math.max(-1, Math.min(1, score));
+      }
+    }
+    ```
+
+    **Key points:**
+    - `@Tool` decorator registers the method as an MCP tool
+    - `inputClass` specifies the input schema
+    - Return type is automatically used for output schema
+    - Tool name is inferred from method name ("analyzeSentiment")
+  </Step>
+
+  <Step title="Add Additional Tools">
+    Add more tools to provide statistics and service information:
+
+    ```typescript
+    @Tool({ 
+      description: 'Get sentiment analysis statistics'
+    })
+    async getSentimentStats(): Promise<{
+      totalAnalyses: number;
+      avgProcessingTime: number;
+      supportedLanguages: string[];
+      lastUpdated: string;
+    }> {
+      return {
+        totalAnalyses: 1000,
+        avgProcessingTime: 45,
+        supportedLanguages: ['en', 'es', 'fr', 'de'],
+        lastUpdated: new Date().toISOString()
+      };
+    }
+
+    @Tool({ 
+      description: 'Get service information'
+    })
+    async getServiceInfo() {
+      return {
+        name: "Sentiment Analysis Service",
+        version: "1.0.0",
+        description: "Provides sentiment analysis for text using keyword matching",
+        features: [
+          "Sentiment detection (positive, negative, neutral)",
+          "Confidence scoring",
+          "Multi-language support (planned)"
+        ]
+      };
+    }
+    ```
+
+    **Key points:**
+    - Tools without parameters don't need an input class
+    - Return types can be defined inline
+    - Multiple tools can coexist in one service
+  </Step>
+
+  <Step title="Create the Server">
+    Set up your server entry point in `main.ts`:
+
+    ```typescript
+    import { createHTTPServer } from "@leanmcp/core";
+
+    // Services are automatically discovered from ./mcp directory
+    await createHTTPServer({
+      name: "sentiment-analysis-server",
+      version: "1.0.0",
+      port: 8080,
+      cors: true,
+      logging: true
+    });
+
+    console.log("\nSentiment Analysis MCP Server");
+    ```
+
+    **Key points:**
+    - `createHTTPServer` starts the MCP server
+    - Services in `./mcp/` are auto-discovered
+    - CORS and logging can be easily enabled
+  </Step>
+</Steps>
+
+## Project Structure
+
+```
+sentiment-analysis-server/
+├── main.ts                          # Server entry point
+├── package.json
+├── tsconfig.json
+└── mcp/
+    └── sentiment/
+        └── index.ts                 # Sentiment analysis service
+```
+
+## Testing the Tool
+
+Start your server:
+
+```bash
+npm start
+```
+
+The server will be available at `http://localhost:8080/mcp`.
+
+### Example Requests
+
+**Analyze positive text:**
+```json
+{
+  "name": "analyzeSentiment",
+  "arguments": {
+    "text": "This is a great and wonderful product! I love it!",
+    "language": "en"
+  }
+}
+```
+
+**Expected response:**
+```json
+{
+  "sentiment": "positive",
+  "score": 0.9,
+  "confidence": 0.9,
+  "language": "en"
+}
+```
+
+**Get statistics:**
+```json
+{
+  "name": "getSentimentStats",
+  "arguments": {}
+}
+```
+
+## Key Takeaways
+
+- **Type Safety**: Input and output schemas provide compile-time validation
+- **Schema Constraints**: Add validation rules directly to your classes
+- **Auto-Discovery**: Services are automatically loaded from the `mcp/` directory
+- **Multiple Tools**: One service can expose multiple related tools
+- **Clean Code**: Decorators keep your code concise and readable
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Weather Service" icon="cloud-sun" href="/examples/weather-service">
+    Learn how to handle optional parameters and enums
+  </Card>
+  <Card title="Calculator Service" icon="calculator" href="/examples/calculator">
+    See how to handle multiple operations with error handling
+  </Card>
+</CardGroup>

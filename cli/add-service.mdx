@@ -1,0 +1,410 @@
+---
+title: 'leanmcp add'
+description: 'Add a new service to your existing MCP project'
+icon: 'layer-plus'
+---
+
+## Overview
+
+The `leanmcp add` command creates a new service in your MCP project with boilerplate code for tools, prompts, and resources.
+
+```bash
+leanmcp add <serviceName>
+```
+
+## Basic Usage
+
+<Steps>
+
+<Step title="Navigate to your project">
+  ```bash
+  cd my-mcp-server
+  ```
+
+  Make sure you're in a LeanMCP project directory (must contain `main.ts`).
+</Step>
+
+<Step title="Add a service">
+  ```bash
+  leanmcp add weather
+  ```
+
+  Creates `mcp/weather/index.ts` with example code.
+</Step>
+
+<Step title="Customize the service">
+  Edit `mcp/weather/index.ts` to implement your business logic.
+</Step>
+
+<Step title="Start using it">
+  ```bash
+  npm run dev
+  ```
+
+  The service is automatically discovered and registered!
+</Step>
+
+</Steps>
+
+## What Gets Created
+
+When you run `leanmcp add weather`, the CLI:
+
+1. Creates `mcp/weather/index.ts` with boilerplate
+2. Includes example `@Tool`, `@Prompt`, and `@Resource` decorators
+3. Adds schema validation with `@SchemaConstraint`
+4. Automatically registers in your server (via auto-discovery)
+
+## Generated Service Template
+
+```typescript mcp/weather/index.ts
+import { Tool, Prompt, Resource, SchemaConstraint, Optional } from '@leanmcp/core';
+
+class GreetInput {
+  @SchemaConstraint({
+    description: 'Name to greet',
+    minLength: 1
+  })
+  name!: string;
+
+  @Optional()
+  @SchemaConstraint({
+    description: 'Optional greeting style',
+    enum: ['formal', 'casual'],
+    default: 'casual'
+  })
+  style?: string;
+}
+
+export class Weather {
+  @Tool({ 
+    description: 'Greet someone',
+    inputClass: GreetInput
+  })
+  async greet(args: GreetInput) {
+    const greeting = args.style === 'formal' 
+      ? `Good day, ${args.name}` 
+      : `Hey ${args.name}!`;
+    
+    return { message: greeting };
+  }
+
+  @Prompt({ description: 'Generate a welcome prompt' })
+  welcomePrompt(args: { name?: string }) {
+    return {
+      messages: [{
+        role: 'user',
+        content: {
+          type: 'text',
+          text: `Say hello to ${args.name || 'the user'}!`
+        }
+      }]
+    };
+  }
+
+  @Resource({ description: 'Get service status' })
+  getStatus() {
+    return {
+      status: 'active',
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString()
+    };
+  }
+}
+```
+
+## Terminal Output
+
+```bash
+$ leanmcp add weather
+
+Created new service: weather
+   File: mcp/weather/index.ts
+   Tool: greet
+   Prompt: welcomePrompt
+   Resource: getStatus
+
+Service will be automatically discovered on next server start!
+```
+
+## Auto-Discovery
+
+LeanMCP automatically discovers services in the `mcp/` directory. No manual registration needed!
+
+**How it works:**
+
+```typescript main.ts
+import { createHTTPServer } from '@leanmcp/core';
+
+// Services in mcp/ are automatically discovered
+await createHTTPServer({
+  name: "my-server",
+  version: "1.0.0",
+  port: 3001,
+  // autoDiscover: true by default
+});
+```
+
+## Real-World Example
+
+Let's create a weather service:
+
+<Steps>
+
+<Step title="Add the service">
+  ```bash
+  leanmcp add weather
+  ```
+</Step>
+
+<Step title="Customize the implementation">
+  ```typescript mcp/weather/index.ts
+  import { Tool, SchemaConstraint, Optional } from '@leanmcp/core';
+
+  class WeatherInput {
+    @SchemaConstraint({
+      description: 'City name',
+      minLength: 1
+    })
+    city!: string;
+
+    @Optional()
+    @SchemaConstraint({
+      description: 'Units',
+      enum: ['metric', 'imperial'],
+      default: 'metric'
+    })
+    units?: string;
+  }
+
+  class WeatherOutput {
+    @SchemaConstraint({ description: 'Temperature' })
+    temperature!: number;
+
+    @SchemaConstraint({ description: 'Weather condition' })
+    conditions!: string;
+
+    @SchemaConstraint({ 
+      description: 'Humidity percentage',
+      minimum: 0,
+      maximum: 100
+    })
+    humidity!: number;
+  }
+
+  export class Weather {
+    @Tool({ 
+      description: 'Get current weather for a city',
+      inputClass: WeatherInput
+    })
+    async getCurrentWeather(args: WeatherInput): Promise<WeatherOutput> {
+      // Call weather API (e.g., OpenWeatherMap)
+      const apiKey = process.env.WEATHER_API_KEY;
+      const response = await fetch(
+        `https://api.openweathermap.org/data/2.5/weather?q=${args.city}&units=${args.units}&appid=${apiKey}`
+      );
+      
+      const data = await response.json();
+      
+      return {
+        temperature: data.main.temp,
+        conditions: data.weather[0].main,
+        humidity: data.main.humidity
+      };
+    }
+  }
+  ```
+</Step>
+
+<Step title="Add environment variables">
+  ```bash .env
+  WEATHER_API_KEY=your_api_key_here
+  ```
+</Step>
+
+<Step title="Test the tool">
+  ```bash
+  npm run dev
+  ```
+
+  ```bash
+  curl -X POST http://localhost:3001/mcp \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonrpc": "2.0",
+      "method": "tools/call",
+      "params": {
+        "name": "getCurrentWeather",
+        "arguments": {
+          "city": "San Francisco",
+          "units": "metric"
+        }
+      },
+      "id": 1
+    }'
+  ```
+</Step>
+
+</Steps>
+
+## Multiple Services
+
+Add as many services as you need:
+
+```bash
+leanmcp add weather
+leanmcp add payments
+leanmcp add notifications
+leanmcp add analytics
+```
+
+Each service gets its own directory:
+
+```
+mcp/
+├── weather/
+│   └── index.ts
+├── payments/
+│   └── index.ts
+├── notifications/
+│   └── index.ts
+└── analytics/
+    └── index.ts
+```
+
+## Service Organization
+
+For complex services, organize with multiple files:
+
+```
+mcp/
+└── weather/
+    ├── index.ts           # Main service class
+    ├── types.ts           # Type definitions
+    ├── api-client.ts      # External API calls
+    └── utils.ts           # Helper functions
+```
+
+```typescript mcp/weather/index.ts
+import { Tool } from '@leanmcp/core';
+import { WeatherInput, WeatherOutput } from './types';
+import { WeatherAPIClient } from './api-client';
+
+export class Weather {
+  private apiClient = new WeatherAPIClient();
+
+  @Tool({ 
+    description: 'Get weather',
+    inputClass: WeatherInput
+  })
+  async getCurrentWeather(args: WeatherInput): Promise<WeatherOutput> {
+    return this.apiClient.getWeather(args.city);
+  }
+}
+```
+
+## Error Handling
+
+### Not a LeanMCP Project
+
+```bash
+$ leanmcp add weather
+ERROR: Not a LeanMCP project (main.ts missing).
+```
+
+**Solution:** Run the command from your project root directory.
+
+### Service Already Exists
+
+```bash
+$ leanmcp add weather
+ERROR: Service weather already exists.
+```
+
+**Solution:** Choose a different name or delete the existing service.
+
+## Best Practices
+
+### 1. Name Services Descriptively
+
+```bash
+leanmcp add weather       # ✓ Good
+leanmcp add service1      # ✗ Not descriptive
+```
+
+### 2. Use Clear Tool Names
+
+```typescript
+@Tool({ description: 'Get current weather' })
+async getCurrentWeather(args: WeatherInput) { }  // ✓ Clear
+
+@Tool({ description: 'Process data' })
+async process(args: any) { }  // ✗ Vague
+```
+
+### 3. Add Comprehensive Schema Validation
+
+```typescript
+class WeatherInput {
+  @SchemaConstraint({
+    description: 'City name',
+    minLength: 1,
+    maxLength: 100
+  })
+  city!: string;
+
+  @Optional()
+  @SchemaConstraint({
+    description: 'Temperature units',
+    enum: ['metric', 'imperial'],
+    default: 'metric'
+  })
+  units?: string;
+}
+```
+
+### 4. Handle Errors Gracefully
+
+```typescript
+@Tool({ description: 'Get weather', inputClass: WeatherInput })
+async getCurrentWeather(args: WeatherInput) {
+  try {
+    const data = await this.weatherAPI.fetch(args.city);
+    return { success: true, data };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+```
+
+### 5. Document Your Tools
+
+```typescript
+@Tool({ 
+  description: 'Get current weather conditions for a city. Supports metric and imperial units.',
+  inputClass: WeatherInput
+})
+async getCurrentWeather(args: WeatherInput) {
+  // Implementation
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Dev Commands" icon="code" href="/cli/dev-commands">
+    Start developing with hot-reload
+  </Card>
+  <Card title="Tools" icon="wrench" href="/concepts/tools">
+    Learn about @Tool decorator
+  </Card>
+  <Card title="Prompts" icon="message" href="/concepts/prompts">
+    Create reusable prompts
+  </Card>
+  <Card title="Resources" icon="database" href="/concepts/resources">
+    Expose data with resources
+  </Card>
+</CardGroup>

@@ -1,0 +1,522 @@
+---
+title: 'Dev, Build & Start'
+description: 'Development workflow commands for building and running your MCP server'
+icon: 'code'
+---
+
+## Overview
+
+LeanMCP provides three essential commands for your development workflow:
+
+- `leanmcp dev` - Development server with hot-reload
+- `leanmcp build` - Production build
+- `leanmcp start` - Build and run production server
+
+## leanmcp dev
+
+Start the development server with hot-reload and UI component building.
+
+```bash
+leanmcp dev
+```
+
+### What It Does
+
+<Steps>
+
+<Step title="Scans for UI components">
+  Finds all `@UIApp` decorators in your `mcp/` directory.
+</Step>
+
+<Step title="Builds UI components">
+  Compiles React components into standalone HTML files using Vite.
+</Step>
+
+<Step title="Starts the server">
+  Runs `tsx watch main.ts` for TypeScript hot-reload.
+</Step>
+
+<Step title="Watches for changes">
+  Monitors `mcp/` directory and automatically:
+  - Rebuilds modified UI components
+  - Reloads server on code changes
+  - Updates when decorators are added/removed
+</Step>
+
+</Steps>
+
+### Terminal Output
+
+```bash
+$ leanmcp dev
+
+LeanMCP Development Server
+
+ℹ Found 2 @UIApp component(s)
+ℹ UI components built
+
+Starting development server...
+
+[HTTP][INFO] Server running on http://localhost:3001
+[HTTP][INFO] MCP endpoint: http://localhost:3001/mcp
+[HTTP][INFO] Health check: http://localhost:3001/health
+[HTTP][INFO] Dashboard: http://localhost:3001/
+```
+
+### Hot-Reload Behavior
+
+**When you modify a file:**
+
+```bash
+ℹ Rebuilding WeatherWidget...
+✔ WeatherWidget rebuilding complete
+[HTTP][INFO] Server restarting...
+```
+
+**When you add a new `@UIApp`:**
+
+```bash
+ℹ Building PaymentForm...
+✔ PaymentForm building complete
+```
+
+**When you remove a `@UIApp`:**
+
+```bash
+⚠ Removing weather://widget...
+```
+
+### Testing Your Server
+
+<CodeGroup>
+
+```bash curl
+# Test health endpoint
+curl http://localhost:3001/health
+
+# List available tools
+curl http://localhost:3001/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "tools/list",
+    "id": 1
+  }'
+
+# Call a tool
+curl -X POST http://localhost:3001/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+      "name": "getCurrentWeather",
+      "arguments": {
+        "city": "San Francisco"
+      }
+    },
+    "id": 1
+  }'
+```
+
+```javascript JavaScript
+const response = await fetch('http://localhost:3001/mcp', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'tools/call',
+    params: {
+      name: 'getCurrentWeather',
+      arguments: { city: 'San Francisco' }
+    },
+    id: 1
+  })
+});
+
+const result = await response.json();
+console.log(result);
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    'http://localhost:3001/mcp',
+    json={
+        'jsonrpc': '2.0',
+        'method': 'tools/call',
+        'params': {
+            'name': 'getCurrentWeather',
+            'arguments': {'city': 'San Francisco'}
+        },
+        'id': 1
+    }
+)
+
+print(response.json())
+```
+
+</CodeGroup>
+
+### Stopping the Dev Server
+
+Press `Ctrl+C` to stop the server gracefully.
+
+```bash
+^C
+Shutting down...
+```
+
+---
+
+## leanmcp build
+
+Build UI components and compile TypeScript for production.
+
+```bash
+leanmcp build
+```
+
+### What It Does
+
+<Steps>
+
+<Step title="Scans for UI components">
+  Finds all `@UIApp` decorators in your project.
+</Step>
+
+<Step title="Builds UI components (production mode)">
+  Compiles components with minification and optimizations.
+</Step>
+
+<Step title="Writes UI manifest">
+  Creates `.leanmcp/ui-manifest.json` for runtime resource registration.
+</Step>
+
+<Step title="Compiles TypeScript">
+  Runs `tsc` to compile `.ts` files to `dist/`.
+</Step>
+
+<Step title="Generates schema metadata">
+  Pre-computes JSON schemas for faster runtime performance.
+</Step>
+
+</Steps>
+
+### Terminal Output
+
+```bash
+$ leanmcp build
+
+🔨 LeanMCP Build
+
+✔ Found 2 @UIApp component(s)
+✔ UI components built
+✔ TypeScript compiled
+✔ Schema metadata generated
+
+Build complete!
+
+To start the server:
+  npm run start:node
+```
+
+### Output Directory Structure
+
+```
+my-mcp-server/
+├── dist/                    # Compiled JavaScript
+│   ├── main.js
+│   └── mcp/
+│       └── weather/
+│           └── index.js
+├── .leanmcp/
+│   ├── ui-manifest.json     # UI component registry
+│   ├── schema-cache.json    # Pre-computed schemas
+│   └── ui-bundles/          # Compiled UI components
+│       └── weather-widget.html
+└── ...
+```
+
+### When to Use Build
+
+- Before deploying to production
+- To verify TypeScript compilation
+- To test production builds locally
+- For CI/CD pipelines
+
+---
+
+## leanmcp start
+
+Build and start the production server in one command.
+
+```bash
+leanmcp start
+```
+
+### What It Does
+
+<Steps>
+
+<Step title="Runs a full production build">
+  Same as `leanmcp build` - compiles UI and TypeScript.
+</Step>
+
+<Step title="Starts the server">
+  Runs `node dist/main.js` to start the production server.
+</Step>
+
+</Steps>
+
+### Terminal Output
+
+```bash
+$ leanmcp start
+
+🚀 LeanMCP Production Build
+
+✔ Found 2 @UIApp component(s)
+✔ UI components built
+✔ TypeScript compiled
+
+Starting production server...
+
+[HTTP][INFO] Server running on http://localhost:3001
+[HTTP][INFO] MCP endpoint: http://localhost:3001/mcp
+```
+
+### Production vs Development
+
+| Feature | `leanmcp dev` | `leanmcp start` |
+|---------|---------------|------------------|
+| TypeScript compilation | `tsx watch` (hot-reload) | `tsc` (compiled) |
+| UI component builds | Development mode | Production mode (minified) |
+| File watching | ✓ Yes | ✗ No |
+| Performance | Slower (watch overhead) | Faster (compiled) |
+| Use case | Local development | Production/testing |
+
+### Stopping the Server
+
+Press `Ctrl+C`:
+
+```bash
+^C
+Shutting down...
+```
+
+---
+
+## NPM Script Aliases
+
+Your `package.json` includes convenient aliases:
+
+```json package.json
+{
+  "scripts": {
+    "dev": "leanmcp dev",
+    "build": "leanmcp build",
+    "start": "leanmcp start",
+    "start:node": "node dist/main.js",
+    "clean": "rm -rf dist"
+  }
+}
+```
+
+<CodeGroup>
+
+```bash npm
+npm run dev      # Development server
+npm run build    # Build only
+npm run start    # Build + start
+npm run start:node  # Start pre-built server
+npm run clean    # Remove build artifacts
+```
+
+```bash yarn
+yarn dev
+yarn build
+yarn start
+yarn start:node
+yarn clean
+```
+
+```bash pnpm
+pnpm dev
+pnpm build
+pnpm start
+pnpm start:node
+pnpm clean
+```
+
+</CodeGroup>
+
+---
+
+## Common Workflows
+
+### Local Development
+
+```bash
+# Start development server
+npm run dev
+
+# Server runs with hot-reload
+# Make changes to mcp/weather/index.ts
+# Server automatically reloads
+```
+
+### Test Production Build Locally
+
+```bash
+# Build for production
+npm run build
+
+# Start production server
+npm run start:node
+
+# Or combine both
+npm run start
+```
+
+### CI/CD Pipeline
+
+```yaml .github/workflows/deploy.yml
+name: Deploy MCP Server
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Build
+        run: npm run build
+      
+      - name: Deploy to LeanMCP Cloud
+        run: npx @leanmcp/cli deploy . --yes
+        env:
+          LEANMCP_API_KEY: ${{ secrets.LEANMCP_API_KEY }}
+```
+
+---
+
+## Troubleshooting
+
+### Port Already in Use
+
+```bash
+Error: Port 3001 is already in use
+```
+
+**Solution:** Change the port in `.env`:
+
+```bash .env
+PORT=3002
+```
+
+### TypeScript Compilation Errors
+
+```bash
+✖ TypeScript compilation failed
+src/mcp/weather/index.ts:10:5 - error TS2322: Type 'string' is not assignable to type 'number'.
+```
+
+**Solution:** Fix the type errors in your code before running `dev` or `build`.
+
+### UI Component Build Failures
+
+```bash
+⚠ Built with warnings
+   WeatherWidget: Unexpected token '<'
+```
+
+**Solution:** Check your React component syntax:
+
+```typescript
+// ✓ Correct
+export function WeatherWidget() {
+  return <div>Weather</div>;
+}
+
+// ✗ Incorrect (missing JSX pragma)
+export function WeatherWidget() {
+  return <div>Weather</div>;  // Error: JSX not enabled
+}
+```
+
+### Module Not Found
+
+```bash
+Error: Cannot find module '@leanmcp/core'
+```
+
+**Solution:** Install dependencies:
+
+```bash
+npm install
+```
+
+---
+
+## Environment Variables
+
+### Common Configuration
+
+```bash .env
+# Server configuration
+PORT=3001
+NODE_ENV=development
+
+# External APIs
+WEATHER_API_KEY=your_api_key_here
+DATABASE_URL=postgresql://...
+
+# Feature flags
+ENABLE_DASHBOARD=true
+ENABLE_CORS=true
+```
+
+### Loading Environment Variables
+
+```typescript main.ts
+import { config } from 'dotenv';
+
+// Load .env file
+config();
+
+const port = parseInt(process.env.PORT || '3001');
+const apiKey = process.env.WEATHER_API_KEY;
+```
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deploy to Cloud" icon="rocket" href="/guides/deployment">
+    Deploy your server to LeanMCP Cloud
+  </Card>
+  <Card title="Environment Variables" icon="key" href="/features/env-injection">
+    Manage secrets and configuration
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/features/observability">
+    Monitor your deployed server
+  </Card>
+  <Card title="UI Components" icon="palette" href="/api/ui/components">
+    Build interactive UI components
+  </Card>
+</CardGroup>

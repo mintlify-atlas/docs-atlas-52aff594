@@ -1,0 +1,655 @@
+---
+title: Schema Design
+description: Learn how to design robust schemas with validation patterns and type safety
+icon: diagram-project
+---
+
+Learn how to design type-safe schemas with automatic validation using LeanMCP's decorator-based approach.
+
+## Schema Basics
+
+LeanMCP uses TypeScript classes with decorators to define JSON schemas. This provides:
+
+- **Type safety** - Full TypeScript support with IntelliSense
+- **Automatic validation** - Input validated against schema with AJV
+- **No duplication** - Single source of truth for types and schemas
+- **Clear documentation** - Schema serves as API documentation
+
+## Defining Input Schemas
+
+Input schemas are TypeScript classes decorated with `@SchemaConstraint`:
+
+```typescript
+import { SchemaConstraint, Optional } from "@leanmcp/core";
+
+class AnalyzeSentimentInput {
+  @SchemaConstraint({
+    description: 'Text to analyze',
+    minLength: 1,
+    maxLength: 5000
+  })
+  text!: string;
+  
+  @Optional()
+  @SchemaConstraint({
+    description: 'Language code',
+    enum: ['en', 'es', 'fr', 'de'],
+    default: 'en'
+  })
+  language?: string;
+}
+```
+
+### Required vs Optional Fields
+
+**Required fields** (no `@Optional()` decorator):
+```typescript
+class UserInput {
+  @SchemaConstraint({ description: 'User email' })
+  email!: string;  // Required field
+}
+```
+
+**Optional fields** (with `@Optional()` decorator):
+```typescript
+class UserInput {
+  @SchemaConstraint({ description: 'User email' })
+  email!: string;  // Required
+  
+  @Optional()
+  @SchemaConstraint({ description: 'User phone' })
+  phone?: string;  // Optional
+}
+```
+
+## String Constraints
+
+### Length Validation
+
+```typescript
+class MessageInput {
+  @SchemaConstraint({
+    description: 'Message text',
+    minLength: 1,
+    maxLength: 280
+  })
+  message!: string;
+}
+```
+
+### Pattern Matching
+
+```typescript
+class PhoneInput {
+  @SchemaConstraint({
+    description: 'US phone number',
+    pattern: '^\\+1[0-9]{10}$'
+  })
+  phone!: string;
+}
+```
+
+### Format Validation
+
+```typescript
+class ContactInput {
+  @SchemaConstraint({
+    description: 'Email address',
+    format: 'email'
+  })
+  email!: string;
+  
+  @SchemaConstraint({
+    description: 'Website URL',
+    format: 'uri'
+  })
+  website!: string;
+  
+  @SchemaConstraint({
+    description: 'Birth date',
+    format: 'date'
+  })
+  birthDate!: string;
+}
+```
+
+Supported formats: `email`, `uri`, `date`, `date-time`, `uuid`, `ipv4`, `ipv6`, `hostname`
+
+### Enum Values
+
+```typescript
+class StatusInput {
+  @SchemaConstraint({
+    description: 'Order status',
+    enum: ['pending', 'processing', 'completed', 'cancelled']
+  })
+  status!: string;
+}
+```
+
+## Number Constraints
+
+### Range Validation
+
+```typescript
+class AgeInput {
+  @SchemaConstraint({
+    description: 'User age',
+    minimum: 18,
+    maximum: 120
+  })
+  age!: number;
+}
+```
+
+### Exclusive Ranges
+
+```typescript
+class ScoreInput {
+  @SchemaConstraint({
+    description: 'Test score',
+    exclusiveMinimum: 0,  // Greater than 0 (not equal)
+    exclusiveMaximum: 100 // Less than 100 (not equal)
+  })
+  score!: number;
+}
+```
+
+### Multiple Of
+
+```typescript
+class QuantityInput {
+  @SchemaConstraint({
+    description: 'Item quantity (multiples of 5)',
+    multipleOf: 5,
+    minimum: 5
+  })
+  quantity!: number;
+}
+```
+
+## Array Constraints
+
+### Array Length
+
+```typescript
+class TagsInput {
+  @SchemaConstraint({
+    description: 'Post tags',
+    minItems: 1,
+    maxItems: 10
+  })
+  tags!: string[];
+}
+```
+
+### Unique Items
+
+```typescript
+class UniqueTagsInput {
+  @SchemaConstraint({
+    description: 'Unique tags only',
+    uniqueItems: true,
+    minItems: 1
+  })
+  tags!: string[];
+}
+```
+
+## Nested Objects
+
+Define complex nested structures:
+
+```typescript
+class AddressInput {
+  @SchemaConstraint({ description: 'Street address' })
+  street!: string;
+  
+  @SchemaConstraint({ description: 'City name' })
+  city!: string;
+  
+  @SchemaConstraint({ 
+    description: 'State code',
+    pattern: '^[A-Z]{2}$'
+  })
+  state!: string;
+  
+  @SchemaConstraint({ 
+    description: 'ZIP code',
+    pattern: '^[0-9]{5}$'
+  })
+  zip!: string;
+}
+
+class UserProfileInput {
+  @SchemaConstraint({ description: 'Full name' })
+  name!: string;
+  
+  @SchemaConstraint({ 
+    description: 'Email address',
+    format: 'email'
+  })
+  email!: string;
+  
+  @SchemaConstraint({ description: 'User address' })
+  address!: AddressInput;
+}
+```
+
+## Output Schemas
+
+Define expected output structure for documentation and type safety:
+
+```typescript
+class AnalyzeSentimentOutput {
+  @SchemaConstraint({
+    description: 'Sentiment classification',
+    enum: ['positive', 'negative', 'neutral']
+  })
+  sentiment!: string;
+  
+  @SchemaConstraint({
+    description: 'Sentiment score',
+    minimum: -1,
+    maximum: 1
+  })
+  score!: number;
+  
+  @SchemaConstraint({
+    description: 'Confidence level',
+    minimum: 0,
+    maximum: 1
+  })
+  confidence!: number;
+  
+  @SchemaConstraint({ description: 'Processing timestamp' })
+  timestamp!: string;
+}
+
+@Tool({ 
+  description: 'Analyze sentiment of text',
+  inputClass: AnalyzeSentimentInput
+})
+async analyzeSentiment(args: AnalyzeSentimentInput): Promise<AnalyzeSentimentOutput> {
+  // Return type enforces output schema
+  return {
+    sentiment: 'positive',
+    score: 0.8,
+    confidence: 0.95,
+    timestamp: new Date().toISOString()
+  };
+}
+```
+
+## Default Values
+
+Provide sensible defaults for optional fields:
+
+```typescript
+class SearchInput {
+  @SchemaConstraint({ description: 'Search query' })
+  query!: string;
+  
+  @Optional()
+  @SchemaConstraint({
+    description: 'Results per page',
+    minimum: 1,
+    maximum: 100,
+    default: 10
+  })
+  limit?: number;
+  
+  @Optional()
+  @SchemaConstraint({
+    description: 'Page offset',
+    minimum: 0,
+    default: 0
+  })
+  offset?: number;
+  
+  @Optional()
+  @SchemaConstraint({
+    description: 'Sort order',
+    enum: ['asc', 'desc'],
+    default: 'asc'
+  })
+  sort?: string;
+}
+```
+
+## Validation Patterns
+
+### Email Validation
+
+```typescript
+class EmailInput {
+  @SchemaConstraint({
+    description: 'Email address',
+    format: 'email',
+    minLength: 5,
+    maxLength: 100
+  })
+  email!: string;
+}
+```
+
+### URL Validation
+
+```typescript
+class WebhookInput {
+  @SchemaConstraint({
+    description: 'Webhook URL',
+    format: 'uri',
+    pattern: '^https://'  // Require HTTPS
+  })
+  url!: string;
+}
+```
+
+### Date Validation
+
+```typescript
+class EventInput {
+  @SchemaConstraint({
+    description: 'Event date (ISO 8601)',
+    format: 'date-time'
+  })
+  startDate!: string;
+  
+  @SchemaConstraint({
+    description: 'End date (ISO 8601)',
+    format: 'date-time'
+  })
+  endDate!: string;
+}
+```
+
+### UUID Validation
+
+```typescript
+class ResourceInput {
+  @SchemaConstraint({
+    description: 'Resource ID',
+    format: 'uuid'
+  })
+  id!: string;
+}
+```
+
+### Custom Pattern Validation
+
+```typescript
+class UsernameInput {
+  @SchemaConstraint({
+    description: 'Username (alphanumeric, 3-20 chars)',
+    pattern: '^[a-zA-Z0-9]{3,20}$',
+    minLength: 3,
+    maxLength: 20
+  })
+  username!: string;
+}
+
+class SlugInput {
+  @SchemaConstraint({
+    description: 'URL slug (lowercase, hyphens)',
+    pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+  })
+  slug!: string;
+}
+
+class HexColorInput {
+  @SchemaConstraint({
+    description: 'Hex color code',
+    pattern: '^#[0-9A-Fa-f]{6}$'
+  })
+  color!: string;
+}
+```
+
+## Complex Real-World Examples
+
+### User Registration
+
+```typescript
+class RegisterUserInput {
+  @SchemaConstraint({
+    description: 'Email address',
+    format: 'email',
+    minLength: 5,
+    maxLength: 100
+  })
+  email!: string;
+  
+  @SchemaConstraint({
+    description: 'Password (min 8 chars, must contain letter and number)',
+    minLength: 8,
+    maxLength: 100,
+    pattern: '^(?=.*[A-Za-z])(?=.*\\d)[A-Za-z\\d@$!%*#?&]{8,}$'
+  })
+  password!: string;
+  
+  @SchemaConstraint({
+    description: 'Full name',
+    minLength: 2,
+    maxLength: 100
+  })
+  name!: string;
+  
+  @Optional()
+  @SchemaConstraint({
+    description: 'Phone number',
+    pattern: '^\\+[1-9]\\d{1,14}$'  // E.164 format
+  })
+  phone?: string;
+  
+  @SchemaConstraint({
+    description: 'Accept terms of service',
+    enum: [true]
+  })
+  acceptTerms!: boolean;
+}
+```
+
+### Payment Processing
+
+```typescript
+class ProcessPaymentInput {
+  @SchemaConstraint({
+    description: 'Payment amount in cents',
+    minimum: 50,  // Minimum $0.50
+    maximum: 1000000  // Maximum $10,000
+  })
+  amount!: number;
+  
+  @SchemaConstraint({
+    description: 'Currency code (ISO 4217)',
+    enum: ['USD', 'EUR', 'GBP', 'JPY'],
+    default: 'USD'
+  })
+  currency!: string;
+  
+  @SchemaConstraint({
+    description: 'Card number (without spaces)',
+    pattern: '^[0-9]{13,19}$'
+  })
+  cardNumber!: string;
+  
+  @SchemaConstraint({
+    description: 'Expiry month (MM)',
+    pattern: '^(0[1-9]|1[0-2])$'
+  })
+  expiryMonth!: string;
+  
+  @SchemaConstraint({
+    description: 'Expiry year (YYYY)',
+    pattern: '^20[2-9][0-9]$'
+  })
+  expiryYear!: string;
+  
+  @SchemaConstraint({
+    description: 'CVV code',
+    pattern: '^[0-9]{3,4}$'
+  })
+  cvv!: string;
+  
+  @Optional()
+  @SchemaConstraint({
+    description: 'Payment description',
+    maxLength: 200
+  })
+  description?: string;
+}
+```
+
+### Database Query
+
+```typescript
+class QueryInput {
+  @SchemaConstraint({
+    description: 'Collection name',
+    pattern: '^[a-z_][a-z0-9_]*$'
+  })
+  collection!: string;
+  
+  @Optional()
+  @SchemaConstraint({
+    description: 'Filter conditions'
+  })
+  filter?: Record<string, any>;
+  
+  @Optional()
+  @SchemaConstraint({
+    description: 'Fields to select',
+    minItems: 1,
+    uniqueItems: true
+  })
+  select?: string[];
+  
+  @Optional()
+  @SchemaConstraint({
+    description: 'Sort field and order'
+  })
+  sort?: { field: string; order: 'asc' | 'desc' };
+  
+  @Optional()
+  @SchemaConstraint({
+    description: 'Limit results',
+    minimum: 1,
+    maximum: 1000,
+    default: 100
+  })
+  limit?: number;
+}
+```
+
+## Type Safety Tips
+
+### Use Non-Null Assertion
+
+For required fields, use `!` to indicate they'll always have a value:
+
+```typescript
+class Input {
+  @SchemaConstraint({ description: 'Required field' })
+  required!: string;  // Non-null assertion
+  
+  @Optional()
+  @SchemaConstraint({ description: 'Optional field' })
+  optional?: string;  // Optional type
+}
+```
+
+### Leverage Union Types
+
+```typescript
+type Status = 'pending' | 'processing' | 'completed';
+
+class OrderInput {
+  @SchemaConstraint({
+    description: 'Order status',
+    enum: ['pending', 'processing', 'completed']
+  })
+  status!: Status;  // Type-safe enum
+}
+```
+
+### Extract Common Schemas
+
+Reuse schema definitions across services:
+
+```typescript schemas/common.ts
+export class PaginationInput {
+  @Optional()
+  @SchemaConstraint({ minimum: 1, maximum: 100, default: 10 })
+  limit?: number;
+  
+  @Optional()
+  @SchemaConstraint({ minimum: 0, default: 0 })
+  offset?: number;
+}
+
+export class TimestampFields {
+  @SchemaConstraint({ description: 'Creation timestamp' })
+  createdAt!: string;
+  
+  @SchemaConstraint({ description: 'Last update timestamp' })
+  updatedAt!: string;
+}
+```
+
+Use in your services:
+```typescript
+class ListUsersInput extends PaginationInput {
+  @SchemaConstraint({ description: 'Search query' })
+  search!: string;
+}
+```
+
+## Troubleshooting
+
+### Validation Errors
+
+**Problem:** Input validation fails unexpectedly.
+
+**Solutions:**
+- Check constraint values match your data types
+- Verify enum values are exact matches
+- Ensure patterns are valid regex (escape special chars)
+- Test with valid sample data first
+
+### TypeScript Errors
+
+**Problem:** Type errors with schema classes.
+
+**Solutions:**
+- Enable decorators in `tsconfig.json`
+- Use `!` for required fields, `?` for optional
+- Import decorators from `@leanmcp/core`
+- Ensure `experimentalDecorators` and `emitDecoratorMetadata` are enabled
+
+### Schema Not Generated
+
+**Problem:** Schema isn't being created for input.
+
+**Solutions:**
+- Specify `inputClass` in the decorator
+- Ensure class is decorated with `@SchemaConstraint`
+- Check for TypeScript compilation errors
+- Verify the class is exported if in a separate file
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/guides/error-handling">
+    Handle validation and runtime errors
+  </Card>
+  <Card title="Creating Services" icon="wrench" href="/guides/creating-services">
+    Build services with validated schemas
+  </Card>
+  <Card title="API Reference" icon="book" href="/api/core/decorators">
+    Complete schema decorator reference
+  </Card>
+  <Card title="Examples" icon="code" href="/examples/sentiment-analysis">
+    See real-world schema examples
+  </Card>
+</CardGroup>

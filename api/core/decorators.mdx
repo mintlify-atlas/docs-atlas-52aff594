@@ -1,0 +1,527 @@
+---
+title: Decorators
+description: TypeScript decorators for defining MCP tools, prompts, and resources
+---
+
+LeanMCP provides TypeScript decorators to define tools, prompts, and resources with automatic type inference and schema generation.
+
+## Core Decorators
+
+### @Tool
+
+Marks a method as an MCP tool (callable function).
+
+```typescript
+@Tool(options?: ToolOptions): MethodDecorator
+```
+
+<ParamField path="options" type="ToolOptions">
+  <Expandable title="ToolOptions">
+    <ParamField path="description" type="string">
+      Human-readable description of what the tool does
+    </ParamField>
+
+    <ParamField path="inputClass" type="class">
+      Input class for automatic JSON Schema generation (optional for tools with no input)
+    </ParamField>
+
+    <ParamField path="securitySchemes" type="SecurityScheme[]">
+      Security requirements (MCP authorization spec):
+      - `{ type: 'noauth' }` - Callable anonymously
+      - `{ type: 'oauth2', scopes: ['read:user'] }` - Requires OAuth with scopes
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Example
+
+```typescript
+import { Tool } from '@leanmcp/core';
+
+class AnalyzeSentimentInput {
+  @SchemaConstraint({ description: 'Text to analyze' })
+  text!: string;
+
+  @Optional()
+  language?: string;
+}
+
+class SentimentService {
+  @Tool({
+    description: 'Analyze sentiment of text',
+    inputClass: AnalyzeSentimentInput,
+  })
+  async analyzeSentiment(args: AnalyzeSentimentInput) {
+    return {
+      sentiment: 'positive',
+      score: 0.85,
+      text: args.text,
+    };
+  }
+
+  // Tool with OAuth requirement
+  @Tool({
+    description: 'Fetch private user data',
+    securitySchemes: [{ type: 'oauth2', scopes: ['read:user'] }],
+  })
+  async fetchPrivateData() {
+    return { data: 'private' };
+  }
+}
+```
+
+### @Prompt
+
+Marks a method as an MCP prompt template.
+
+```typescript
+@Prompt(options?: PromptOptions): MethodDecorator
+```
+
+<ParamField path="options" type="PromptOptions">
+  <Expandable title="PromptOptions">
+    <ParamField path="description" type="string">
+      Human-readable description of the prompt
+    </ParamField>
+
+    <ParamField path="inputClass" type="class">
+      Input class for automatic JSON Schema generation
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Example
+
+```typescript
+import { Prompt } from '@leanmcp/core';
+
+class PromptInput {
+  @SchemaConstraint({ description: 'Topic to write about' })
+  topic!: string;
+}
+
+class PromptService {
+  @Prompt({
+    description: 'Generate a blog post prompt',
+    inputClass: PromptInput,
+  })
+  blogPostPrompt(args: PromptInput) {
+    return {
+      messages: [
+        {
+          role: 'user',
+          content: {
+            type: 'text',
+            text: `Write a blog post about ${args.topic}`,
+          },
+        },
+      ],
+    };
+  }
+}
+```
+
+### @Resource
+
+Marks a method as an MCP resource (data source/endpoint).
+
+```typescript
+@Resource(options?: ResourceOptions): MethodDecorator
+```
+
+<ParamField path="options" type="ResourceOptions">
+  <Expandable title="ResourceOptions">
+    <ParamField path="description" type="string">
+      Human-readable description of the resource
+    </ParamField>
+
+    <ParamField path="mimeType" type="string" default="'application/json'">
+      MIME type of the resource content
+    </ParamField>
+
+    <ParamField path="inputClass" type="class">
+      Input class for automatic JSON Schema generation
+    </ParamField>
+
+    <ParamField path="uri" type="string">
+      Explicit resource URI (default: `ui://classname/methodname`)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Example
+
+```typescript
+import { Resource } from '@leanmcp/core';
+
+class StatsService {
+  @Resource({
+    description: 'Service statistics',
+    mimeType: 'application/json',
+  })
+  getStats() {
+    return {
+      requests: 1234,
+      uptime: process.uptime(),
+    };
+  }
+
+  @Resource({
+    description: 'Custom resource',
+    uri: 'custom://my-resource',
+    mimeType: 'text/plain',
+  })
+  getCustomResource() {
+    return 'Custom resource content';
+  }
+}
+```
+
+## Schema Decorators
+
+### @Optional
+
+Marks a class property as optional in the JSON Schema.
+
+```typescript
+@Optional(): PropertyDecorator
+```
+
+#### Example
+
+```typescript
+import { Optional, SchemaConstraint } from '@leanmcp/core';
+
+class MyInput {
+  @SchemaConstraint({ description: 'Required field' })
+  required!: string;
+
+  @Optional()
+  @SchemaConstraint({ description: 'Optional field' })
+  optional?: string;
+}
+```
+
+### @SchemaConstraint
+
+Adds JSON Schema constraints and metadata to a property.
+
+```typescript
+@SchemaConstraint(constraints: {
+  description?: string;
+  minLength?: number;
+  maxLength?: number;
+  minimum?: number;
+  maximum?: number;
+  pattern?: string;
+  enum?: any[];
+  default?: any;
+  type?: string;
+}): PropertyDecorator
+```
+
+<ParamField path="constraints" type="object" required>
+  <Expandable title="Schema Constraints">
+    <ParamField path="description" type="string">
+      Human-readable description of the field
+    </ParamField>
+
+    <ParamField path="minLength" type="number">
+      Minimum string length
+    </ParamField>
+
+    <ParamField path="maxLength" type="number">
+      Maximum string length
+    </ParamField>
+
+    <ParamField path="minimum" type="number">
+      Minimum numeric value
+    </ParamField>
+
+    <ParamField path="maximum" type="number">
+      Maximum numeric value
+    </ParamField>
+
+    <ParamField path="pattern" type="string">
+      Regular expression pattern (string fields)
+    </ParamField>
+
+    <ParamField path="enum" type="any[]">
+      Array of allowed values
+    </ParamField>
+
+    <ParamField path="default" type="any">
+      Default value
+    </ParamField>
+
+    <ParamField path="type" type="string">
+      Explicit JSON Schema type
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Example
+
+```typescript
+import { SchemaConstraint, Optional } from '@leanmcp/core';
+
+class ValidationExample {
+  @SchemaConstraint({
+    description: 'User email address',
+    pattern: '^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$',
+  })
+  email!: string;
+
+  @SchemaConstraint({
+    description: 'User age',
+    minimum: 0,
+    maximum: 120,
+  })
+  age!: number;
+
+  @SchemaConstraint({
+    description: 'Account type',
+    enum: ['free', 'pro', 'enterprise'],
+  })
+  accountType!: string;
+
+  @Optional()
+  @SchemaConstraint({
+    description: 'Bio (max 500 chars)',
+    maxLength: 500,
+  })
+  bio?: string;
+}
+```
+
+## Authentication Decorators
+
+### @Auth
+
+Adds authentication requirements to a class or method.
+
+```typescript
+@Auth(options: AuthOptions): ClassDecorator & MethodDecorator
+```
+
+<ParamField path="options" type="AuthOptions" required>
+  <Expandable title="AuthOptions">
+    <ParamField path="provider" type="string" required>
+      Authentication provider name (e.g., 'clerk', 'stripe', 'github')
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Example
+
+```typescript
+import { Auth, Tool } from '@leanmcp/core';
+
+// Class-level auth (applies to all methods)
+@Auth({ provider: 'clerk' })
+class SecureService {
+  @Tool({ description: 'Get user data' })
+  async getUserData() {
+    return { user: 'data' };
+  }
+}
+
+// Method-level auth
+class MixedService {
+  @Tool({ description: 'Public method' })
+  async publicMethod() {
+    return 'public';
+  }
+
+  @Tool({ description: 'Premium feature' })
+  @Auth({ provider: 'stripe' })
+  async premiumMethod() {
+    return 'premium';
+  }
+}
+```
+
+### @UserEnvs
+
+Injects environment variables or user-level configuration into the service instance.
+
+```typescript
+@UserEnvs(): PropertyDecorator
+```
+
+#### Example
+
+```typescript
+import { UserEnvs, Tool } from '@leanmcp/core';
+
+class ConfigurableService {
+  @UserEnvs()
+  envs!: Record<string, string | undefined>;
+
+  @Tool({ description: 'Get API key' })
+  async getApiKey() {
+    return this.envs.API_KEY || 'not-configured';
+  }
+}
+```
+
+## UI & Rendering Decorators
+
+### @UI
+
+Links a UI component or frontend visualization to a tool or resource.
+
+```typescript
+@UI(component: string): ClassDecorator & MethodDecorator
+```
+
+<ParamField path="component" type="string" required>
+  UI component name or path
+</ParamField>
+
+#### Example
+
+```typescript
+import { UI, Tool } from '@leanmcp/core';
+
+@UI('ChartComponent')
+class VisualizationService {
+  @Tool({ description: 'Get chart data' })
+  async getChartData() {
+    return {
+      labels: ['Jan', 'Feb', 'Mar'],
+      values: [10, 20, 30],
+    };
+  }
+}
+```
+
+### @Render
+
+Specifies how the output should be rendered.
+
+```typescript
+@Render(format: 'markdown' | 'html' | 'json' | 'chart' | 'table' | string): MethodDecorator
+```
+
+<ParamField path="format" type="string" required>
+  Render format: 'markdown', 'html', 'json', 'chart', 'table', or custom format
+</ParamField>
+
+#### Example
+
+```typescript
+import { Render, Tool } from '@leanmcp/core';
+
+class ContentService {
+  @Tool({ description: 'Get formatted report' })
+  @Render('markdown')
+  async getReport() {
+    return '# Report\n\nThis is a **markdown** report.';
+  }
+
+  @Tool({ description: 'Get JSON data' })
+  @Render('json')
+  async getData() {
+    return { data: 'value' };
+  }
+}
+```
+
+## Workflow Decorators
+
+### @Deprecated
+
+Marks a tool, prompt, or resource as deprecated.
+
+```typescript
+@Deprecated(message?: string): ClassDecorator & MethodDecorator
+```
+
+<ParamField path="message" type="string">
+  Optional deprecation message (default: 'This feature is deprecated')
+</ParamField>
+
+#### Example
+
+```typescript
+import { Deprecated, Tool } from '@leanmcp/core';
+
+class LegacyService {
+  @Tool({ description: 'Old method' })
+  @Deprecated('Use newMethod instead')
+  async oldMethod() {
+    return 'old';
+  }
+
+  @Tool({ description: 'New method' })
+  async newMethod() {
+    return 'new';
+  }
+}
+
+// When oldMethod is called, logs: "DEPRECATED: oldMethod - Use newMethod instead"
+```
+
+## Helper Functions
+
+### getMethodMetadata()
+
+Get all metadata for a specific method.
+
+```typescript
+function getMethodMetadata(method: Function): {
+  toolName?: string;
+  toolDescription?: string;
+  promptName?: string;
+  promptDescription?: string;
+  resourceUri?: string;
+  resourceName?: string;
+  resourceDescription?: string;
+  inputSchema?: object;
+  outputSchema?: object;
+  authProvider?: string;
+  authRequired?: boolean;
+  uiComponent?: string;
+  renderFormat?: string;
+  deprecated?: boolean;
+  deprecationMessage?: string;
+}
+```
+
+### getDecoratedMethods()
+
+Get all methods with a specific decorator from a class.
+
+```typescript
+function getDecoratedMethods(
+  target: any,
+  metadataKey: string
+): Array<{
+  method: Function;
+  propertyKey: string;
+  metadata: any;
+}>
+```
+
+#### Example
+
+```typescript
+import { getDecoratedMethods } from '@leanmcp/core';
+
+class MyService {
+  @Tool({ description: 'Tool 1' })
+  async tool1() {}
+
+  @Tool({ description: 'Tool 2' })
+  async tool2() {}
+}
+
+const toolMethods = getDecoratedMethods(MyService, 'tool:name');
+console.log(toolMethods); // [{ method: ..., propertyKey: 'tool1', ... }, ...]
+```
+
+## Related
+
+- [Schema Generator](/api/core/schema-generator) - JSON Schema generation from classes
+- [MCPServer](/api/core/mcp-server) - Core server class

@@ -1,0 +1,297 @@
+---
+title: '@Authenticated Decorator'
+description: 'Protect MCP tools, prompts, and resources with authentication'
+---
+
+## @Authenticated
+
+Decorator to protect MCP tools, prompts, resources, or entire services with authentication.
+
+<Note>
+  This decorator uses AsyncLocalStorage for concurrency safety. Each request has its own isolated `authUser` context, preventing race conditions in high-concurrency scenarios.
+</Note>
+
+### Signature
+
+```typescript
+function Authenticated(
+  authProvider: AuthProviderBase,
+  options?: AuthenticatedOptions
+): MethodDecorator | ClassDecorator
+```
+
+<ParamField path="authProvider" type="AuthProviderBase" required>
+  Instance of `AuthProvider` or custom `AuthProviderBase` implementation
+</ParamField>
+
+<ParamField path="options" type="AuthenticatedOptions">
+  Optional configuration object:
+  
+  <ParamField path="getUser" type="boolean" default="true">
+    Whether to fetch and attach user information to `authUser` variable
+  </ParamField>
+  
+  <ParamField path="projectId" type="string">
+    Project ID for fetching user environment variables. Required when using `@RequireEnv` or `getEnv()`.
+  </ParamField>
+</ParamField>
+
+### Usage Patterns
+
+#### 1. Protect Individual Methods
+
+Protect a single tool/prompt/resource with automatic user info:
+
+```typescript
+import { Tool } from '@leanmcp/core';
+import { Authenticated, AuthProvider } from '@leanmcp/auth';
+
+const authProvider = new AuthProvider('auth0', {
+  domain: 'your-domain.auth0.com',
+  clientId: 'your-client-id',
+  audience: 'your-api-audience',
+});
+
+await authProvider.init();
+
+export class SentimentService {
+  @Tool({ description: 'Analyze sentiment of text' })
+  @Authenticated(authProvider, { getUser: true })
+  async analyzeSentiment(args: { text: string }) {
+    // authUser is automatically available in method scope
+    console.log('User:', authUser.email);
+    console.log('User ID:', authUser.sub);
+    
+    // Your implementation
+    return { sentiment: 'positive', score: 0.8 };
+  }
+}
+```
+
+#### 2. Protect Without User Info
+
+Only verify token, don't fetch user info:
+
+```typescript
+@Tool({ description: 'Public tool' })
+@Authenticated(authProvider, { getUser: false })
+async publicTool(args: { query: string }) {
+  // Token is verified, but authUser is undefined
+  return { result: 'success' };
+}
+```
+
+#### 3. Protect Entire Service
+
+Apply authentication to all methods in a class:
+
+```typescript
+import { Authenticated } from '@leanmcp/auth';
+import { Tool, Prompt } from '@leanmcp/core';
+
+@Authenticated(authProvider)
+export class SecureService {
+  @Tool({ description: 'Protected tool 1' })
+  async tool1(args: any) {
+    // authUser automatically available
+    console.log('Current user:', authUser.email);
+    return { data: 'secure' };
+  }
+
+  @Tool({ description: 'Protected tool 2' })
+  async tool2(args: any) {
+    // All methods require authentication
+    return { data: 'also secure' };
+  }
+
+  @Prompt({ name: 'securePrompt' })
+  async securePrompt() {
+    return {
+      messages: [{ role: 'user', content: `Hello ${authUser.email}` }]
+    };
+  }
+}
+```
+
+#### 4. With User Environment Variables
+
+Fetch user-specific environment variables (LeanMCP provider only):
+
+```typescript
+import { Authenticated, AuthProvider } from '@leanmcp/auth';
+import { getEnv } from '@leanmcp/env-injection';
+
+const authProvider = new AuthProvider('leanmcp', {
+  apiKey: process.env.LEANMCP_API_KEY,
+});
+
+await authProvider.init();
+
+@Tool({ description: 'Send email via user\'s API key' })
+@Authenticated(authProvider, { projectId: 'your-project-id' })
+async sendEmail(args: { to: string; subject: string; body: string }) {
+  // Access user's SendGrid API key
+  const apiKey = getEnv('SENDGRID_API_KEY');
+  
+  // Use the user's credentials
+  await sendEmailViaSendGrid(apiKey, args);
+  
+  return { success: true };
+}
+```
+
+### authUser Global Variable
+
+When `getUser: true` (default), the `authUser` variable is automatically available in method scope:
+
+```typescript
+declare global {
+  const authUser: any;
+}
+```
+
+#### Common Fields
+
+<ResponseField name="authUser.sub" type="string">
+  User ID (subject)
+</ResponseField>
+
+<ResponseField name="authUser.email" type="string">
+  User's email address
+</ResponseField>
+
+<ResponseField name="authUser.email_verified" type="boolean">
+  Email verification status
+</ResponseField>
+
+<ResponseField name="authUser.attributes" type="object">
+  Full decoded token payload with all claims
+</ResponseField>
+
+#### Provider-Specific Fields
+
+**Cognito:**
+- `authUser['cognito:username']` - Cognito username
+- `authUser.username` - Username
+
+**Clerk:**
+- `authUser.first_name` - First name
+- `authUser.last_name` - Last name
+
+**Auth0:**
+- `authUser.name` - Full name
+
+### Token Format
+
+The decorator expects the authentication token in the MCP request `_meta` field:
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "analyzeSentiment",
+    "arguments": {
+      "text": "This product is amazing!"
+    },
+    "_meta": {
+      "authorization": {
+        "type": "bearer",
+        "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+      }
+    }
+  }
+}
+```
+
+### Helper Functions
+
+#### getAuthUser()
+
+Get the current authenticated user from async context:
+
+```typescript
+import { getAuthUser } from '@leanmcp/auth';
+
+const user = getAuthUser();
+console.log('User:', user?.email);
+```
+
+#### isAuthenticationRequired()
+
+Check if a method or class requires authentication:
+
+```typescript
+import { isAuthenticationRequired } from '@leanmcp/auth';
+
+const requiresAuth = isAuthenticationRequired(myMethod);
+```
+
+#### getAuthProvider()
+
+Get the auth provider for a method or class:
+
+```typescript
+import { getAuthProvider } from '@leanmcp/auth';
+
+const provider = getAuthProvider(myMethod);
+```
+
+### Error Responses
+
+When authentication fails, the decorator throws an `AuthenticationError`:
+
+```json
+{
+  "error": {
+    "code": "MISSING_TOKEN",
+    "message": "Authentication required. Please provide a valid token in _meta.authorization.token"
+  }
+}
+```
+
+#### Error Codes
+
+<ResponseField name="MISSING_TOKEN" type="string">
+  No token provided in `_meta.authorization.token`
+</ResponseField>
+
+<ResponseField name="INVALID_TOKEN" type="string">
+  Token is invalid or expired
+</ResponseField>
+
+<ResponseField name="VERIFICATION_FAILED" type="string">
+  Token verification failed (e.g., network error, invalid signature)
+</ResponseField>
+
+### TypeScript Configuration
+
+Ensure your `tsconfig.json` has these settings:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "target": "ES2022",
+    "lib": ["ES2022"]
+  }
+}
+```
+
+### Concurrency Safety
+
+The decorator uses `AsyncLocalStorage` to ensure each request has its own isolated `authUser` context:
+
+```typescript
+import { AsyncLocalStorage } from 'async_hooks';
+
+const authUserStorage = new AsyncLocalStorage<any>();
+
+// Each request gets its own context
+await authUserStorage.run(user, async () => {
+  // authUser is scoped to this request only
+  return await originalMethod.apply(this, [args]);
+});
+```
+
+This prevents race conditions when handling concurrent requests with different users.

@@ -1,0 +1,363 @@
+---
+title: 'Auth Providers'
+description: 'Auth0, Clerk, and Cognito provider configurations'
+---
+
+## Auth0 Provider
+
+Authentication provider for Auth0.
+
+### Configuration
+
+```typescript
+import { AuthProvider } from '@leanmcp/auth';
+
+const authProvider = new AuthProvider('auth0', {
+  domain: 'your-tenant.auth0.com',
+  clientId: 'your-client-id',
+  clientSecret: 'your-client-secret',
+  audience: 'your-api-audience',
+  scopes: 'openid profile email offline_access',
+});
+
+await authProvider.init();
+```
+
+### Configuration Options
+
+<ParamField path="domain" type="string" required>
+  Auth0 domain (e.g., 'your-tenant.auth0.com')
+  
+  Can also be set via `AUTH0_DOMAIN` environment variable
+</ParamField>
+
+<ParamField path="clientId" type="string" required>
+  Auth0 application client ID
+  
+  Can also be set via `AUTH0_CLIENT_ID` environment variable
+</ParamField>
+
+<ParamField path="clientSecret" type="string">
+  Auth0 application client secret (required for refresh tokens)
+  
+  Can also be set via `AUTH0_CLIENT_SECRET` environment variable
+</ParamField>
+
+<ParamField path="audience" type="string" required>
+  Auth0 API audience identifier
+  
+  Can also be set via `AUTH0_AUDIENCE` environment variable
+</ParamField>
+
+<ParamField path="scopes" type="string" default="openid profile email offline_access">
+  OAuth scopes to request
+</ParamField>
+
+### User Object
+
+```typescript
+interface Auth0User {
+  sub: string;              // User ID
+  email: string;            // Email address
+  email_verified: boolean;  // Email verification status
+  name: string;             // Full name
+  attributes: any;          // Full decoded token
+}
+```
+
+### Example
+
+```typescript
+import { AuthProvider, Authenticated } from '@leanmcp/auth';
+import { Tool } from '@leanmcp/core';
+
+const authProvider = new AuthProvider('auth0', {
+  domain: process.env.AUTH0_DOMAIN!,
+  clientId: process.env.AUTH0_CLIENT_ID!,
+  audience: process.env.AUTH0_AUDIENCE!,
+});
+
+await authProvider.init();
+
+export class MyService {
+  @Tool({ description: 'Protected tool' })
+  @Authenticated(authProvider)
+  async myTool() {
+    console.log('User:', authUser.name);
+    console.log('Email:', authUser.email);
+    return { success: true };
+  }
+}
+```
+
+---
+
+## Clerk Provider
+
+Authentication provider for Clerk. Supports both Session Mode and OAuth Mode.
+
+### Session Mode (Default)
+
+```typescript
+import { AuthProvider } from '@leanmcp/auth';
+
+const authProvider = new AuthProvider('clerk', {
+  frontendApi: 'clerk.your-app.com',
+  secretKey: 'sk_test_...',
+});
+
+await authProvider.init();
+```
+
+### OAuth Mode (with Refresh Tokens)
+
+```typescript
+const authProvider = new AuthProvider('clerk', {
+  frontendApi: 'clerk.your-app.com',
+  secretKey: 'sk_test_...',
+  clientId: 'your-client-id',
+  clientSecret: 'your-client-secret',
+  redirectUri: 'https://your-app.com/callback',
+});
+
+await authProvider.init();
+```
+
+### Configuration Options
+
+<ParamField path="frontendApi" type="string" required>
+  Clerk frontend API domain (e.g., 'clerk.your-app.com')
+  
+  Can also be set via `CLERK_FRONTEND_API` environment variable
+</ParamField>
+
+<ParamField path="secretKey" type="string" required>
+  Clerk secret key
+  
+  Can also be set via `CLERK_SECRET_KEY` environment variable
+</ParamField>
+
+<ParamField path="clientId" type="string">
+  OAuth client ID (required for OAuth mode with refresh tokens)
+</ParamField>
+
+<ParamField path="clientSecret" type="string">
+  OAuth client secret (required for OAuth mode)
+</ParamField>
+
+<ParamField path="redirectUri" type="string">
+  OAuth redirect URI (required for OAuth mode)
+</ParamField>
+
+### User Object
+
+```typescript
+interface ClerkUser {
+  sub: string;              // User ID
+  email: string;            // Email address
+  email_verified: boolean;  // Email verification status
+  first_name: string;       // First name
+  last_name: string;        // Last name
+  attributes: any;          // Full decoded token
+}
+```
+
+### Refresh Token Support
+
+<Note>
+  Refresh tokens are only available in OAuth Mode. Session Mode does not support refresh tokens.
+</Note>
+
+```typescript
+// OAuth mode - refresh tokens supported
+try {
+  const tokens = await authProvider.refreshToken(refreshToken);
+  console.log('New access token:', tokens.access_token);
+} catch (error) {
+  console.error('Refresh failed:', error);
+}
+
+// Session mode - throws error
+try {
+  await authProvider.refreshToken(refreshToken);
+} catch (error) {
+  // Error: Clerk is in Session Mode: refresh tokens are not supported
+}
+```
+
+### Example
+
+```typescript
+import { AuthProvider, Authenticated } from '@leanmcp/auth';
+import { Tool } from '@leanmcp/core';
+
+const authProvider = new AuthProvider('clerk', {
+  frontendApi: process.env.CLERK_FRONTEND_API!,
+  secretKey: process.env.CLERK_SECRET_KEY!,
+});
+
+await authProvider.init();
+
+export class MyService {
+  @Tool({ description: 'Get user profile' })
+  @Authenticated(authProvider)
+  async getProfile() {
+    return {
+      name: `${authUser.first_name} ${authUser.last_name}`,
+      email: authUser.email,
+    };
+  }
+}
+```
+
+---
+
+## AWS Cognito Provider
+
+Authentication provider for AWS Cognito User Pools.
+
+### Configuration
+
+```typescript
+import { AuthProvider } from '@leanmcp/auth';
+
+const authProvider = new AuthProvider('cognito', {
+  region: 'us-east-1',
+  userPoolId: 'us-east-1_ABC123',
+  clientId: 'your-client-id',
+  clientSecret: 'your-client-secret', // optional
+});
+
+await authProvider.init();
+```
+
+### Configuration Options
+
+<ParamField path="region" type="string" required>
+  AWS region (e.g., 'us-east-1')
+  
+  Can also be set via `AWS_REGION` environment variable
+</ParamField>
+
+<ParamField path="userPoolId" type="string" required>
+  Cognito User Pool ID (e.g., 'us-east-1_ABC123')
+  
+  Can also be set via `COGNITO_USER_POOL_ID` environment variable
+</ParamField>
+
+<ParamField path="clientId" type="string" required>
+  Cognito App Client ID
+  
+  Can also be set via `COGNITO_CLIENT_ID` environment variable
+</ParamField>
+
+<ParamField path="clientSecret" type="string">
+  Cognito App Client Secret (required if your app client has a secret)
+  
+  Can also be set via `COGNITO_CLIENT_SECRET` environment variable
+</ParamField>
+
+### User Object
+
+```typescript
+interface CognitoUser {
+  sub: string;                  // User ID
+  username: string;             // Username
+  email: string;                // Email address
+  email_verified: boolean;      // Email verification status
+  'cognito:username': string;   // Cognito username
+  attributes: any;              // Full decoded token
+}
+```
+
+### Refresh Tokens
+
+```typescript
+// Refresh access token
+const result = await authProvider.refreshToken(
+  refreshToken,
+  username // Required for Cognito
+);
+
+console.log('New tokens:', result.AuthenticationResult);
+```
+
+<Note>
+  Cognito requires the username parameter when refreshing tokens.
+</Note>
+
+### Token Verification
+
+The provider verifies tokens using JWKS from:
+
+```
+https://cognito-idp.{region}.amazonaws.com/{userPoolId}/.well-known/jwks.json
+```
+
+### Example
+
+```typescript
+import { AuthProvider, Authenticated } from '@leanmcp/auth';
+import { Tool } from '@leanmcp/core';
+
+const authProvider = new AuthProvider('cognito', {
+  region: process.env.AWS_REGION!,
+  userPoolId: process.env.COGNITO_USER_POOL_ID!,
+  clientId: process.env.COGNITO_CLIENT_ID!,
+  clientSecret: process.env.COGNITO_CLIENT_SECRET,
+});
+
+await authProvider.init();
+
+export class UserService {
+  @Tool({ description: 'Get current user info' })
+  @Authenticated(authProvider)
+  async getCurrentUser() {
+    return {
+      username: authUser.username,
+      email: authUser.email,
+      verified: authUser.email_verified,
+    };
+  }
+}
+```
+
+### Secret Hash Calculation
+
+When using a client secret, Cognito requires a SECRET_HASH:
+
+```typescript
+SECRET_HASH = Base64(HMAC_SHA256(username + clientId, clientSecret))
+```
+
+This is handled automatically by the provider.
+
+---
+
+## Provider Comparison
+
+| Feature | Auth0 | Clerk | Cognito |
+|---------|-------|-------|--------|
+| Refresh Tokens | ✅ | ✅ (OAuth mode only) | ✅ |
+| JWKS Verification | ✅ | ✅ | ✅ |
+| Client Secret | Optional | Optional | Optional |
+| User Metadata | Full token | Full token | Full token |
+| Username Required | ❌ | ❌ | ✅ (for refresh) |
+
+## Environment Variable Summary
+
+### Auth0
+- `AUTH0_DOMAIN`
+- `AUTH0_CLIENT_ID`
+- `AUTH0_CLIENT_SECRET`
+- `AUTH0_AUDIENCE`
+
+### Clerk
+- `CLERK_FRONTEND_API`
+- `CLERK_SECRET_KEY`
+
+### Cognito
+- `AWS_REGION`
+- `COGNITO_USER_POOL_ID`
+- `COGNITO_CLIENT_ID`
+- `COGNITO_CLIENT_SECRET`

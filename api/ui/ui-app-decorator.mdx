@@ -1,0 +1,397 @@
+---
+title: "@UIApp Decorator"
+description: "Link MCP tools to React UI components"
+---
+
+# @UIApp Decorator
+
+The `@UIApp` decorator links an MCP tool to a React UI component. When applied to a tool method, it automatically:
+
+1. Adds `_meta.ui.resourceUri` to the tool definition
+2. Registers a resource that renders the component to HTML
+3. Enables hosts to display your UI when the tool is called
+
+## Installation
+
+```bash
+npm install @leanmcp/ui reflect-metadata
+```
+
+## Usage
+
+```typescript
+import { Tool } from '@leanmcp/core';
+import { UIApp } from '@leanmcp/ui';
+import { WeatherCard } from './WeatherCard';
+
+class WeatherService {
+  @Tool({ description: 'Get weather for a city' })
+  @UIApp({ component: WeatherCard })
+  async getWeather(args: { city: string }) {
+    return { city: args.city, temp: 22, conditions: 'Sunny' };
+  }
+}
+```
+
+## API Reference
+
+### @UIApp(options)
+
+Decorator function that links a tool to a UI component.
+
+<ParamField path="options" type="UIAppOptions" required>
+  Configuration options
+</ParamField>
+
+#### UIAppOptions
+
+<ParamField path="component" type="React.ComponentType<any> | string" required>
+  React component or path to component file (relative to service file)
+  
+  - Use component reference for direct SSR rendering
+  - Use path string (e.g., `'./WeatherCard'`) for CLI build - avoids importing browser code in server
+</ParamField>
+
+<ParamField path="uri" type="string">
+  Custom resource URI. Auto-generated if not provided.
+  
+  Default format: `ui://{className}/{methodName}`
+  
+  Example: `ui://weather/getWeather`
+</ParamField>
+
+<ParamField path="title" type="string">
+  HTML document title for the rendered UI
+</ParamField>
+
+<ParamField path="styles" type="string">
+  Additional CSS styles to inject into the HTML document
+</ParamField>
+
+## Examples
+
+### Basic Usage
+
+```typescript
+import { Tool } from '@leanmcp/core';
+import { UIApp } from '@leanmcp/ui';
+import { TaskList } from './TaskList';
+
+class TaskService {
+  @Tool({ description: 'List all tasks' })
+  @UIApp({ component: TaskList })
+  async listTasks() {
+    return {
+      tasks: [
+        { id: '1', title: 'Task 1', completed: false },
+        { id: '2', title: 'Task 2', completed: true },
+      ]
+    };
+  }
+}
+```
+
+### Component File (TaskList.tsx)
+
+```tsx
+import { useToolResult, Card, DataGrid } from '@leanmcp/ui';
+
+interface Task {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
+export function TaskList() {
+  const { result } = useToolResult<{ tasks: Task[] }>();
+  
+  return (
+    <Card>
+      <DataGrid
+        data={result?.tasks ?? []}
+        columns={[
+          { key: 'title', header: 'Task', sortable: true },
+          { 
+            key: 'completed', 
+            header: 'Status',
+            cell: (v) => v ? '✅' : '⏳'
+          },
+        ]}
+      />
+    </Card>
+  );
+}
+```
+
+### Custom URI
+
+```typescript
+@Tool({ description: 'Get user profile' })
+@UIApp({ 
+  component: ProfileCard,
+  uri: 'ui://app/profile'
+})
+async getProfile(args: { userId: string }) {
+  return { userId: args.userId, name: 'John Doe' };
+}
+```
+
+### Path-based Component (for CLI builds)
+
+```typescript
+// Use path string instead of direct import
+// Avoids importing React components in Node.js server
+@Tool({ description: 'Show dashboard' })
+@UIApp({ component: './Dashboard' })
+async getDashboard() {
+  return { stats: { users: 1234, revenue: 5678 } };
+}
+```
+
+### Custom Styling
+
+```typescript
+@Tool({ description: 'Show branded UI' })
+@UIApp({ 
+  component: BrandedCard,
+  title: 'My App Dashboard',
+  styles: `
+    body {
+      background: linear-gradient(to bottom, #667eea 0%, #764ba2 100%);
+    }
+  `
+})
+async showDashboard() {
+  return { data: 'example' };
+}
+```
+
+## Helper Functions
+
+### getUIAppMetadata()
+
+Get UIApp metadata from a method.
+
+```typescript
+import { getUIAppMetadata } from '@leanmcp/ui';
+
+const metadata = getUIAppMetadata(myMethod);
+if (metadata) {
+  console.log('Component:', metadata.component);
+  console.log('URI:', metadata.uri);
+}
+```
+
+#### Returns
+
+<ResponseField name="metadata" type="UIAppOptions | undefined">
+  UIApp options if decorator was applied, undefined otherwise
+</ResponseField>
+
+### getUIAppUri()
+
+Get the resource URI from a method.
+
+```typescript
+import { getUIAppUri } from '@leanmcp/ui';
+
+const uri = getUIAppUri(myMethod);
+// Returns: "ui://weather/getWeather" or undefined
+```
+
+#### Returns
+
+<ResponseField name="uri" type="string | undefined">
+  Resource URI if decorator was applied, undefined otherwise
+</ResponseField>
+
+## How It Works
+
+### 1. Metadata Storage
+
+The decorator stores metadata using `reflect-metadata`:
+
+```typescript
+// Stored on the method
+Reflect.defineMetadata(UI_APP_COMPONENT_KEY, component, method);
+Reflect.defineMetadata(UI_APP_URI_KEY, uri, method);
+```
+
+### 2. Tool Metadata Enhancement
+
+The decorator adds UI metadata to the tool definition:
+
+```json
+{
+  "name": "getWeather",
+  "description": "Get weather for a city",
+  "_meta": {
+    "ui": {
+      "resourceUri": "ui://weather/getWeather"
+    }
+  }
+}
+```
+
+### 3. Resource Registration
+
+A resource is automatically registered that:
+- Renders the React component to HTML
+- Injects the tool result as context
+- Serves the HTML to the host
+
+### 4. Host Integration
+
+When the tool is called, the host:
+1. Sees the `ui.resourceUri` in tool metadata
+2. Fetches the resource
+3. Displays the rendered HTML to the user
+
+## URI Format
+
+By default, URIs follow the pattern:
+
+```
+ui://{className}/{methodName}
+```
+
+Examples:
+- `WeatherService.getWeather` → `ui://weather/getWeather`
+- `TaskService.listTasks` → `ui://task/listTasks`
+- `UserService.getProfile` → `ui://user/getProfile`
+
+The class name:
+- Is converted to lowercase
+- Has the `Service` suffix removed (if present)
+
+## Integration with @leanmcp/core
+
+The `@UIApp` decorator is designed to work seamlessly with `@Tool` from `@leanmcp/core`:
+
+```typescript
+import { Tool } from '@leanmcp/core';
+import { UIApp } from '@leanmcp/ui';
+
+class MyService {
+  @Tool({ 
+    description: 'Example tool',
+    schema: {
+      type: 'object',
+      properties: {
+        input: { type: 'string' }
+      }
+    }
+  })
+  @UIApp({ component: MyComponent })
+  async myTool(args: { input: string }) {
+    return { result: `Processed: ${args.input}` };
+  }
+}
+```
+
+The `@Tool` decorator will automatically detect the UI metadata added by `@UIApp` and include it in the tool definition.
+
+## Best Practices
+
+### 1. Component Separation
+
+Keep UI components in separate files:
+
+```
+src/
+  services/
+    weather.service.ts  # Tool definitions
+  components/
+    WeatherCard.tsx     # UI components
+```
+
+### 2. Type Safety
+
+Use TypeScript generics for type-safe tool results:
+
+```typescript
+interface WeatherResult {
+  city: string;
+  temp: number;
+  conditions: string;
+}
+
+@Tool({ description: 'Get weather' })
+@UIApp({ component: WeatherCard })
+async getWeather(args: { city: string }): Promise<WeatherResult> {
+  // Implementation
+}
+```
+
+```tsx
+// In component
+const { result } = useToolResult<WeatherResult>();
+```
+
+### 3. Error Handling
+
+Handle errors gracefully in your UI components:
+
+```tsx
+export function MyComponent() {
+  const { result, error, loading } = useToolResult();
+  
+  if (loading) return <div>Loading...</div>;
+  if (error) return <Alert variant="error">{error}</Alert>;
+  
+  return <div>{result}</div>;
+}
+```
+
+### 4. Path-based Components for CLI
+
+When using the LeanMCP CLI, use path strings to avoid importing React in Node.js:
+
+```typescript
+// ✅ Good - CLI-friendly
+@UIApp({ component: './WeatherCard' })
+
+// ❌ Avoid - Imports React in Node.js
+import { WeatherCard } from './WeatherCard';
+@UIApp({ component: WeatherCard })
+```
+
+## Troubleshooting
+
+### UI not displaying
+
+1. Check that `reflect-metadata` is imported at app entry point
+2. Verify the resource URI is correct in tool metadata
+3. Ensure the component is exported properly
+
+### TypeScript errors
+
+Make sure `experimentalDecorators` and `emitDecoratorMetadata` are enabled:
+
+```json
+{
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  }
+}
+```
+
+### Component not receiving data
+
+Use `useToolResult()` hook in your component to access the tool result:
+
+```tsx
+import { useToolResult } from '@leanmcp/ui';
+
+export function MyComponent() {
+  const { result } = useToolResult();
+  return <div>{JSON.stringify(result)}</div>;
+}
+```
+
+## See Also
+
+- [React Components](/api/ui/components) - Available UI components
+- [Hooks](/api/ui/hooks) - React hooks for MCP
+- [@Tool Decorator](/api/core/decorators#tool) - Core tool decorator

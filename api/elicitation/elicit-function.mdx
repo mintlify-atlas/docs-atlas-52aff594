@@ -1,0 +1,384 @@
+---
+title: 'elicit() Function'
+description: 'Programmatic API for requesting user input via forms'
+---
+
+## @Elicitation Decorator
+
+Decorator to mark a method as requiring elicitation (user input collection). The decorator automatically checks for missing required fields and returns an elicitation request when needed.
+
+### Signature
+
+```typescript
+function Elicitation(config: ElicitationConfig): MethodDecorator
+```
+
+<ParamField path="config" type="ElicitationConfig" required>
+  Configuration object for elicitation behavior:
+  
+  <ParamField path="strategy" type="'form' | 'conversational' | 'multi-step'" default="form">
+    Elicitation strategy type
+  </ParamField>
+  
+  <ParamField path="title" type="string">
+    Form title
+  </ParamField>
+  
+  <ParamField path="description" type="string">
+    Form description
+  </ParamField>
+  
+  <ParamField path="fields" type="ElicitationField[]">
+    Array of form fields
+  </ParamField>
+  
+  <ParamField path="condition" type="(args: any) => boolean">
+    Optional condition function. If returns false, elicitation is skipped.
+  </ParamField>
+  
+  <ParamField path="builder" type="(context: ElicitationContext) => ElicitationRequest | ElicitationStep[]">
+    Optional builder function for dynamic form generation
+  </ParamField>
+</ParamField>
+
+### Basic Usage
+
+#### Simple Form Elicitation
+
+```typescript
+import { Tool } from '@leanmcp/core';
+import { Elicitation } from '@leanmcp/elicitation';
+
+export class SlackService {
+  @Tool({ description: 'Create Slack channel' })
+  @Elicitation({
+    title: 'Create Channel',
+    description: 'Please provide channel details',
+    fields: [
+      {
+        name: 'channelName',
+        label: 'Channel Name',
+        type: 'text',
+        required: true,
+        placeholder: 'e.g., team-updates',
+      },
+      {
+        name: 'isPrivate',
+        label: 'Private Channel',
+        type: 'boolean',
+        defaultValue: false,
+      },
+      {
+        name: 'topic',
+        label: 'Channel Topic',
+        type: 'textarea',
+        required: false,
+      },
+    ],
+  })
+  async createChannel(args: CreateChannelInput) {
+    // Method receives complete args after elicitation
+    const { channelName, isPrivate, topic } = args;
+    
+    // Create channel logic
+    return { success: true, channelId: '123' };
+  }
+}
+```
+
+#### Conditional Elicitation
+
+Only elicit if certain fields are missing:
+
+```typescript
+@Tool({ description: 'Send message' })
+@Elicitation({
+  condition: (args) => !args.channelId,
+  title: 'Select Channel',
+  fields: [
+    {
+      name: 'channelId',
+      label: 'Channel',
+      type: 'select',
+      required: true,
+      options: [
+        { label: 'General', value: 'C001' },
+        { label: 'Random', value: 'C002' },
+      ],
+    },
+  ],
+})
+async sendMessage(args: { channelId?: string; message: string }) {
+  // Only elicits if channelId is missing
+  console.log('Sending to:', args.channelId);
+  return { success: true };
+}
+```
+
+#### Multi-Step Elicitation
+
+```typescript
+@Tool({ description: 'Deploy application' })
+@Elicitation({
+  strategy: 'multi-step',
+  builder: () => [
+    {
+      title: 'Step 1: Select Environment',
+      fields: [
+        {
+          name: 'environment',
+          label: 'Environment',
+          type: 'select',
+          required: true,
+          options: [
+            { label: 'Development', value: 'dev' },
+            { label: 'Staging', value: 'staging' },
+            { label: 'Production', value: 'prod' },
+          ],
+        },
+      ],
+    },
+    {
+      title: 'Step 2: Configuration',
+      fields: [
+        {
+          name: 'replicas',
+          label: 'Number of Replicas',
+          type: 'number',
+          required: true,
+          defaultValue: 3,
+          validation: { min: 1, max: 10 },
+        },
+        {
+          name: 'autoScale',
+          label: 'Enable Auto-scaling',
+          type: 'boolean',
+          defaultValue: true,
+        },
+      ],
+    },
+  ],
+})
+async deployApp(args: DeployConfig) {
+  // Receives all collected values
+  console.log('Deploying to:', args.environment);
+  console.log('Replicas:', args.replicas);
+  return { deploymentId: 'dep-123' };
+}
+```
+
+### Using Form Builder
+
+The fluent form builder provides a cleaner API:
+
+```typescript
+import { ElicitationFormBuilder } from '@leanmcp/elicitation';
+
+@Tool({ description: 'Create user' })
+@Elicitation({
+  builder: () => {
+    return new ElicitationFormBuilder()
+      .title('Create User')
+      .description('Enter user details')
+      .addTextField('firstName', 'First Name', { required: true })
+      .addTextField('lastName', 'Last Name', { required: true })
+      .addEmailField('email', 'Email Address', { required: true })
+      .addSelectField('role', 'Role', [
+        { label: 'Admin', value: 'admin' },
+        { label: 'User', value: 'user' },
+      ])
+      .addBooleanField('sendWelcome', 'Send Welcome Email', {
+        defaultValue: true,
+      })
+      .build();
+  },
+})
+async createUser(args: CreateUserInput) {
+  return { userId: '123', ...args };
+}
+```
+
+### Dynamic Forms
+
+Use the builder with context for dynamic forms:
+
+```typescript
+@Tool({ description: 'Configure integration' })
+@Elicitation({
+  builder: (context) => {
+    const form = new ElicitationFormBuilder()
+      .title('Configure Integration')
+      .addSelectField('provider', 'Provider', [
+        { label: 'Slack', value: 'slack' },
+        { label: 'GitHub', value: 'github' },
+        { label: 'Jira', value: 'jira' },
+      ]);
+
+    // Add provider-specific fields based on previous values
+    const provider = context.args.provider;
+    
+    if (provider === 'slack') {
+      form.addTextField('webhookUrl', 'Webhook URL', { required: true });
+    } else if (provider === 'github') {
+      form.addTextField('token', 'Access Token', { required: true });
+      form.addTextField('repo', 'Repository', { required: true });
+    }
+
+    return form.build();
+  },
+})
+async configureIntegration(args: IntegrationConfig) {
+  // Handle configuration
+  return { configured: true };
+}
+```
+
+### Helper Functions
+
+#### isElicitationEnabled()
+
+Check if a method has elicitation enabled:
+
+```typescript
+import { isElicitationEnabled } from '@leanmcp/elicitation';
+
+const enabled = isElicitationEnabled(myMethod);
+console.log('Elicitation enabled:', enabled);
+```
+
+#### getElicitationConfig()
+
+Get elicitation configuration for a method:
+
+```typescript
+import { getElicitationConfig } from '@leanmcp/elicitation';
+
+const config = getElicitationConfig(myMethod);
+if (config) {
+  console.log('Title:', config.title);
+  console.log('Fields:', config.fields);
+}
+```
+
+#### buildElicitationRequest()
+
+Manually build an elicitation request:
+
+```typescript
+import { buildElicitationRequest } from '@leanmcp/elicitation';
+
+const request = buildElicitationRequest(
+  myMethod,
+  { channelName: '' }, // current args
+  { /* meta */ }
+);
+
+if (request) {
+  console.log('Elicitation needed:', request.title);
+}
+```
+
+### Elicitation Request Format
+
+The decorator returns an elicitation request in this format:
+
+```typescript
+interface ElicitationRequest {
+  type: 'elicitation';
+  title: string;
+  description?: string;
+  fields: ElicitationField[];
+  metadata?: {
+    stepNumber?: number;
+    totalSteps?: number;
+    previousValues?: Record<string, any>;
+    [key: string]: any;
+  };
+}
+```
+
+### Client Response Format
+
+Clients should respond with:
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "createChannel",
+    "arguments": {
+      "channelName": "team-updates",
+      "isPrivate": false,
+      "topic": "Updates for the team"
+    }
+  }
+}
+```
+
+### TypeScript Configuration
+
+Ensure decorators are enabled:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  }
+}
+```
+
+### Best Practices
+
+1. **Use required fields** for critical data to ensure elicitation triggers
+2. **Provide default values** for optional fields to improve UX
+3. **Use conditional elicitation** to avoid unnecessary prompts
+4. **Add validation** to fields to catch errors early
+5. **Use form builder** for complex forms with many fields
+6. **Test multi-step flows** thoroughly to ensure smooth UX
+
+### Common Patterns
+
+#### Collect Missing Fields Only
+
+```typescript
+@Elicitation({
+  condition: (args) => !args.name || !args.email,
+  fields: [
+    { name: 'name', label: 'Name', type: 'text', required: true },
+    { name: 'email', label: 'Email', type: 'email', required: true },
+  ],
+})
+```
+
+#### Progressive Disclosure
+
+```typescript
+@Elicitation({
+  builder: (context) => {
+    // Show different fields based on previous answers
+    if (context.args.accountType === 'business') {
+      // Show business fields
+    } else {
+      // Show personal fields
+    }
+  },
+})
+```
+
+#### Validation Feedback
+
+```typescript
+fields: [
+  {
+    name: 'email',
+    label: 'Email',
+    type: 'email',
+    required: true,
+    validation: {
+      pattern: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$',
+      errorMessage: 'Please enter a valid email address',
+    },
+  },
+]
+```

@@ -1,0 +1,406 @@
+---
+title: 'Auth0 Integration'
+description: 'Complete guide to integrating Auth0 authentication with LeanMCP SDK'
+icon: 'shield-check'
+---
+
+This example demonstrates how to build an MCP server with Auth0 authentication using the LeanMCP SDK.
+
+## Features
+
+- **Auth0 Authentication**: Secure your MCP tools with Auth0
+- **Token Management**: Refresh tokens and manage user sessions
+- **Protected Endpoints**: Demonstrate authenticated tool access
+- **Zero-Config Service Discovery**: Services are automatically discovered from the `./mcp` directory
+- **Concurrency-Safe**: The `authUser` variable is implemented using AsyncLocalStorage for safe concurrent request handling
+
+## Prerequisites
+
+- Node.js 18+ installed
+- An Auth0 account and application configured
+- Auth0 API configured with appropriate permissions
+
+## Setup
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    npm install @leanmcp/core @leanmcp/auth dotenv
+    ```
+
+    Install dev dependencies:
+    ```bash
+    npm install -D @leanmcp/cli @types/node tsx typescript
+    ```
+  </Step>
+
+  <Step title="Configure Auth0">
+    - Create an Auth0 application (Regular Web Application or Single Page Application)
+    - Create an Auth0 API
+    - Note your Domain, Client ID, Client Secret, and API Audience
+  </Step>
+
+  <Step title="Set up environment variables">
+    Create a `.env` file with your Auth0 credentials:
+
+    ```env
+    AUTH0_DOMAIN=your-tenant.auth0.com
+    AUTH0_CLIENT_ID=your-client-id
+    AUTH0_CLIENT_SECRET=your-client-secret
+    AUTH0_AUDIENCE=your-api-audience
+    PORT=3000
+    ```
+  </Step>
+
+  <Step title="Create the configuration file">
+    Create `mcp/config.ts` to initialize the Auth0 provider:
+
+    ```typescript mcp/config.ts
+    import { AuthProvider } from "@leanmcp/auth";
+
+    // Validate required configuration
+    if (!process.env.AUTH0_DOMAIN || !process.env.AUTH0_CLIENT_ID || !process.env.AUTH0_AUDIENCE) {
+      throw new Error(
+        'Missing required Auth0 configuration. Please set AUTH0_DOMAIN, AUTH0_CLIENT_ID, and AUTH0_AUDIENCE in .env file'
+      );
+    }
+
+    // Initialize authentication provider
+    export const authProvider = new AuthProvider('auth0', {
+      domain: process.env.AUTH0_DOMAIN,
+      clientId: process.env.AUTH0_CLIENT_ID,
+      clientSecret: process.env.AUTH0_CLIENT_SECRET,
+      audience: process.env.AUTH0_AUDIENCE,
+      scopes: 'openid profile email offline_access'
+    });
+
+    // Initialize the provider
+    await authProvider.init();
+    ```
+  </Step>
+
+  <Step title="Create the authentication service">
+    Create `mcp/auth/index.ts` for token management:
+
+    ```typescript mcp/auth/index.ts
+    import { Tool, SchemaConstraint } from "@leanmcp/core";
+    import { AuthProvider } from "@leanmcp/auth";
+    import { authProvider } from "../config.js";
+
+    class RefreshTokenInput {
+      @SchemaConstraint({
+        description: 'Refresh token to use for obtaining a new access token',
+        minLength: 1
+      })
+      refreshToken!: string;
+    }
+
+    class RefreshTokenOutput {
+      @SchemaConstraint({ description: 'New access token' })
+      access_token!: string;
+
+      @SchemaConstraint({ description: 'New ID token' })
+      id_token!: string;
+
+      @SchemaConstraint({ description: 'Token expiration time in seconds' })
+      expires_in!: number;
+
+      @SchemaConstraint({ description: 'Token type (usually "Bearer")' })
+      token_type!: string;
+
+      @SchemaConstraint({ description: 'Scope of the token' })
+      scope!: string;
+    }
+
+    export class AuthService {
+      private authProvider: AuthProvider;
+
+      constructor() {
+        this.authProvider = authProvider;
+      }
+
+      @Tool({ 
+        description: 'Refresh an expired access token using a refresh token',
+        inputClass: RefreshTokenInput
+      })
+      async refreshToken(args: RefreshTokenInput): Promise<RefreshTokenOutput> {
+        try {
+          const result = await this.authProvider.refreshToken(args.refreshToken);
+          
+          return {
+            access_token: result.access_token,
+            id_token: result.id_token,
+            expires_in: result.expires_in,
+            token_type: result.token_type,
+            scope: result.scope
+          };
+        } catch (error) {
+          throw new Error(
+            `Failed to refresh token: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      }
+
+      @Tool({ 
+        description: 'Get information about the authentication configuration and requirements' 
+      })
+      async getAuthInfo(): Promise<{
+        provider: string;
+        authRequired: boolean;
+        tokenType: string;
+        instructions: string;
+      }> {
+        return {
+          provider: this.authProvider.getProviderType(),
+          authRequired: true,
+          tokenType: 'Bearer',
+          instructions: 'Include your access token in the "token" field of authenticated requests.'
+        };
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Create protected demo service">
+    Create `mcp/demo/index.ts` with authenticated endpoints:
+
+    ```typescript mcp/demo/index.ts
+    import { Tool, SchemaConstraint } from "@leanmcp/core";
+    import { Authenticated } from "@leanmcp/auth";
+    import { authProvider } from "../config.js";
+
+    // authUser is globally available in @Authenticated methods
+    // It's implemented as a getter that reads from AsyncLocalStorage,
+    // making it 100% concurrency-safe
+
+    class EchoInput {
+      @SchemaConstraint({
+        description: 'Message to echo back',
+        minLength: 1
+      })
+      message!: string;
+    }
+
+    @Authenticated(authProvider)
+    export class DemoService {
+      @Tool({ 
+        description: 'Get the authenticated user profile information from Auth0'
+      })
+      async getUserProfile(): Promise<{
+        userId: string;
+        email: string;
+        name?: string;
+        picture?: string;
+        emailVerified?: boolean;
+      }> {
+        // authUser is automatically available - injected by @Authenticated decorator
+        return {
+          userId: authUser.sub,
+          email: authUser.email,
+          name: authUser.name,
+          picture: authUser.picture,
+          emailVerified: authUser.email_verified
+        };
+      }
+
+      @Tool({ 
+        description: 'Echo back a message with authenticated user information',
+        inputClass: EchoInput
+      })
+      async echo(args: EchoInput): Promise<{ 
+        message: string;
+        timestamp: string;
+        userId: string;
+        userEmail: string;
+      }> {
+        return {
+          message: args.message,
+          timestamp: new Date().toISOString(),
+          userId: authUser.sub,
+          userEmail: authUser.email
+        };
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Create the server entry point">
+    Create `main.ts`:
+
+    ```typescript main.ts
+    import 'dotenv/config';
+    import { createHTTPServer } from "@leanmcp/core";
+
+    await createHTTPServer({
+      name: 'auth0-example',
+      version: '1.0.0',
+      port: parseInt(process.env.PORT || '3000'),
+      cors: true,
+      logging: true
+    });
+
+    console.log('\nAuth0 MCP Server Example');
+    ```
+  </Step>
+</Steps>
+
+## Running the Server
+
+<Tabs>
+  <Tab title="Development">
+    ```bash
+    npm run dev
+    ```
+    The server will start with auto-reload on `http://localhost:3000`
+  </Tab>
+  <Tab title="Production">
+    ```bash
+    npm run build
+    npm start
+    ```
+  </Tab>
+</Tabs>
+
+## Authentication Flow
+
+<Steps>
+  <Step title="Obtain tokens from Auth0">
+    Use Auth0's authentication flow (e.g., Authorization Code Flow) to obtain:
+    - `access_token`
+    - `id_token`
+    - `refresh_token`
+  </Step>
+
+  <Step title="Use protected tools">
+    Pass the `id_token` via `_meta.authorization.token` in your MCP request.
+    The `@Authenticated` decorator automatically extracts and verifies the token.
+  </Step>
+
+  <Step title="Refresh expired tokens">
+    When tokens expire, use the `refreshToken` tool with your `refresh_token` to obtain new tokens.
+  </Step>
+</Steps>
+
+## Available Tools
+
+### AuthService
+
+#### `refreshToken`
+Refresh an expired access token using a refresh token.
+
+**Input:**
+```json
+{
+  "refreshToken": "your-refresh-token"
+}
+```
+
+**Output:**
+```json
+{
+  "access_token": "new-access-token",
+  "id_token": "new-id-token",
+  "expires_in": 86400,
+  "token_type": "Bearer",
+  "scope": "openid profile email offline_access"
+}
+```
+
+#### `getAuthInfo`
+Get information about the authentication configuration.
+
+**Output:**
+```json
+{
+  "provider": "auth0",
+  "authRequired": true,
+  "tokenType": "Bearer",
+  "instructions": "Include your access token in the 'token' field..."
+}
+```
+
+### DemoService (Protected)
+
+#### `getUserProfile`
+Get the authenticated user's profile information.
+
+**Output:**
+```json
+{
+  "userId": "auth0|507f1f77bcf86cd799439011",
+  "email": "user@example.com",
+  "name": "John Doe",
+  "picture": "https://s.gravatar.com/avatar/...",
+  "emailVerified": true
+}
+```
+
+#### `echo`
+Echo back a message with user information.
+
+**Input:**
+```json
+{
+  "message": "Hello, World!"
+}
+```
+
+**Output:**
+```json
+{
+  "message": "Hello, World!",
+  "timestamp": "2024-01-01T12:00:00.000Z",
+  "userId": "auth0|507f1f77bcf86cd799439011",
+  "userEmail": "user@example.com"
+}
+```
+
+## How It Works
+
+### Service Discovery
+The MCP server automatically discovers and registers all services exported from files in the `./mcp` directory.
+
+### Authentication
+- The `@Authenticated` decorator protects tools that require authentication
+- Auth0 JWT tokens are verified using JWKS (JSON Web Key Set)
+- Token verification includes signature validation, expiration checks, and issuer/audience verification
+- The `authUser` variable is automatically available in protected methods
+- **Concurrency Safe**: `authUser` is implemented as a getter that reads from AsyncLocalStorage
+
+### Package.json Scripts
+
+```json package.json
+{
+  "scripts": {
+    "dev": "leanmcp dev",
+    "start": "leanmcp start",
+    "build": "leanmcp build"
+  },
+  "dependencies": {
+    "@leanmcp/auth": "^0.4.0",
+    "@leanmcp/core": "^0.4.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@leanmcp/cli": "^0.3.1",
+    "@types/node": "^22.10.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
+```
+
+## Security Notes
+
+<Warning>
+  - Never commit your `.env` file or expose your Auth0 credentials
+  - Always use HTTPS in production
+  - Implement proper token storage and refresh logic in your client
+  - Consider implementing rate limiting for production use
+</Warning>
+
+## Learn More
+
+- [Auth0 Documentation](https://auth0.com/docs)
+- [LeanMCP Authentication Guide](/authentication/overview)
+- [MCP Protocol Specification](https://modelcontextprotocol.io)

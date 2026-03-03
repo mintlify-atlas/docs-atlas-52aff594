@@ -1,0 +1,293 @@
+---
+title: MCPServer
+description: Core server class for manually registering MCP services
+---
+
+The `MCPServer` class is the main entry point for creating MCP servers. It handles automatic service discovery, tool/prompt/resource registration, and provides the underlying MCP SDK server instance.
+
+## Constructor
+
+```typescript
+new MCPServer(options: MCPServerConstructorOptions)
+```
+
+Creates a new MCPServer instance with automatic service discovery and initialization.
+
+### Parameters
+
+<ParamField path="options" type="MCPServerConstructorOptions" required>
+  Server configuration options
+
+  <Expandable title="MCPServerConstructorOptions">
+    <ParamField path="name" type="string" required>
+      Server name (displayed in MCP clients)
+    </ParamField>
+
+    <ParamField path="version" type="string" required>
+      Server version (semantic versioning recommended)
+    </ParamField>
+
+    <ParamField path="logging" type="boolean" default="false">
+      Enable logging output
+    </ParamField>
+
+    <ParamField path="debug" type="boolean" default="false">
+      Enable detailed debug logs (requires `logging: true`)
+    </ParamField>
+
+    <ParamField path="autoDiscover" type="boolean" default="true">
+      Enable automatic service discovery from the `mcp/` directory
+    </ParamField>
+
+    <ParamField path="mcpDir" type="string">
+      Custom path to the MCP services directory (default: `./mcp`)
+    </ParamField>
+
+    <ParamField path="serviceFactories" type="Record<string, () => any>">
+      Dependency injection factories for service classes
+    </ParamField>
+
+    <ParamField path="port" type="number">
+      HTTP server port (used with `createHTTPServer`)
+    </ParamField>
+
+    <ParamField path="cors" type="boolean | { origin?: string | string[]; credentials?: boolean }">
+      CORS configuration for HTTP server
+    </ParamField>
+
+    <ParamField path="sessionTimeout" type="number">
+      Session timeout in milliseconds
+    </ParamField>
+
+    <ParamField path="stateless" type="boolean" default="true">
+      Enable stateless mode for Lambda/serverless deployments
+    </ParamField>
+
+    <ParamField path="dashboard" type="boolean" default="true">
+      Serve dashboard UI at `/` and `/mcp` GET endpoints
+    </ParamField>
+
+    <ParamField path="auth" type="HTTPServerAuthOptions">
+      OAuth/Auth configuration (MCP authorization spec)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Example
+
+```typescript
+import { MCPServer } from '@leanmcp/core';
+
+const server = new MCPServer({
+  name: 'my-mcp-server',
+  version: '1.0.0',
+  logging: true,
+  debug: true,
+  autoDiscover: true,
+  mcpDir: './mcp',
+});
+```
+
+## Methods
+
+### registerService()
+
+Manually register a service instance with decorated methods.
+
+```typescript
+server.registerService(instance: any): void
+```
+
+<ParamField path="instance" type="any" required>
+  Service class instance with `@Tool`, `@Prompt`, or `@Resource` decorated methods
+</ParamField>
+
+#### Example
+
+```typescript
+import { MCPServer, Tool } from '@leanmcp/core';
+
+class MyService {
+  @Tool({ description: 'Get current time' })
+  async getCurrentTime() {
+    return new Date().toISOString();
+  }
+}
+
+const server = new MCPServer({
+  name: 'my-server',
+  version: '1.0.0',
+  autoDiscover: false,
+});
+
+server.registerService(new MyService());
+```
+
+### autoRegisterServices()
+
+Automatically discover and register services from a directory.
+
+```typescript
+await server.autoRegisterServices(
+  mcpDir: string,
+  serviceFactories?: Record<string, () => any>
+): Promise<void>
+```
+
+<ParamField path="mcpDir" type="string" required>
+  Path to directory containing service files (looks for `index.ts` or `index.js` files)
+</ParamField>
+
+<ParamField path="serviceFactories" type="Record<string, () => any>">
+  Optional map of service class names to factory functions for dependency injection
+</ParamField>
+
+#### Example
+
+```typescript
+// Auto-register services with no dependencies
+await server.autoRegisterServices('./mcp');
+
+// Auto-register with dependency injection
+await server.autoRegisterServices('./mcp', {
+  SlackService: () => new SlackService(process.env.SLACK_TOKEN),
+  AuthService: () => new AuthService(authProvider),
+});
+```
+
+### getServer()
+
+Get the underlying MCP SDK Server instance.
+
+```typescript
+server.getServer(): Server
+```
+
+<ResponseField name="server" type="Server">
+  The underlying `@modelcontextprotocol/sdk` Server instance
+</ResponseField>
+
+#### Example
+
+```typescript
+const mcpServer = server.getServer();
+// Use with stdio transport
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+const transport = new StdioServerTransport();
+await mcpServer.connect(transport);
+```
+
+### waitForInit()
+
+Wait for initialization to complete (auto-discovery, UI manifest loading).
+
+```typescript
+await server.waitForInit(): Promise<void>
+```
+
+This method is called internally by `createHTTPServer` and typically doesn't need to be called manually.
+
+### close()
+
+Clean up all registered services, watchers, and resources. **Critical for stateless mode** to prevent memory leaks.
+
+```typescript
+server.close(): void
+```
+
+#### Example
+
+```typescript
+// In stateless Lambda handler
+const server = new MCPServer({ name: 'my-server', version: '1.0.0' });
+try {
+  // ... handle request
+} finally {
+  server.close(); // Clean up resources
+}
+```
+
+### cleanup()
+
+Asynchronous cleanup of resources (alias for `close` with async support).
+
+```typescript
+await server.cleanup(): Promise<void>
+```
+
+## Service Discovery
+
+The `MCPServer` automatically discovers services from the `mcp/` directory:
+
+1. Scans for `index.ts` or `index.js` files recursively
+2. Imports all exported classes
+3. Instantiates classes with factory functions (if provided) or no-args constructors
+4. Registers all `@Tool`, `@Prompt`, and `@Resource` decorated methods
+
+### Directory Structure
+
+```
+project/
+├── mcp/
+│   ├── weather/
+│   │   └── index.ts    # WeatherService
+│   ├── slack/
+│   │   └── index.ts    # SlackService
+│   └── github/
+│       └── index.ts    # GitHubService
+└── index.ts            # Main server
+```
+
+### Disabling Auto-Discovery
+
+```typescript
+const server = new MCPServer({
+  name: 'my-server',
+  version: '1.0.0',
+  autoDiscover: false, // Disable automatic discovery
+});
+
+// Manually register services
+server.registerService(new WeatherService());
+server.registerService(new SlackService());
+```
+
+## Stateless vs Stateful Mode
+
+### Stateless Mode (Default)
+
+Optimized for Lambda/serverless deployments:
+- Fresh server instance per request
+- No session persistence
+- Automatic cleanup after each request
+- No file watchers or background processes
+
+```typescript
+const server = new MCPServer({
+  name: 'my-server',
+  version: '1.0.0',
+  stateless: true, // Default
+});
+```
+
+### Stateful Mode
+
+Long-running servers with session support:
+- Single server instance
+- Session persistence with optional DynamoDB backend
+- File watchers for hot-reload
+- SSE support for streaming
+
+```typescript
+const server = new MCPServer({
+  name: 'my-server',
+  version: '1.0.0',
+  stateless: false,
+});
+```
+
+## Related
+
+- [createHTTPServer](/api/core/create-http-server) - Create HTTP server from MCPServer
+- [Decorators](/api/core/decorators) - Tool/Prompt/Resource decorators
+- [Session Stores](/api/core/session-store) - Session persistence backends

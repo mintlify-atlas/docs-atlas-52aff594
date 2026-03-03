@@ -1,0 +1,665 @@
+---
+title: 'Schema Validation'
+description: 'Learn class-based schema validation with @SchemaConstraint and @Optional decorators'
+---
+
+# Schema Validation
+
+LeanMCP uses class-based schemas with TypeScript decorators to provide compile-time type safety and runtime validation.
+
+## Class-Based Schemas
+
+Define input/output schemas as TypeScript classes with property decorators:
+
+```typescript
+import { SchemaConstraint, Optional } from '@leanmcp/core';
+
+class UserInput {
+  @SchemaConstraint({
+    description: 'User email address',
+    format: 'email'
+  })
+  email!: string;
+
+  @Optional()
+  @SchemaConstraint({
+    description: 'User age',
+    minimum: 18,
+    maximum: 120
+  })
+  age?: number;
+}
+```
+
+**Benefits:**
+- Type safety at compile time
+- Automatic JSON Schema generation
+- No duplication between TypeScript types and schemas
+- IntelliSense support in IDEs
+
+## @SchemaConstraint Decorator
+
+The `@SchemaConstraint` decorator adds JSON Schema validation rules to properties.
+
+### Type Signature
+
+From `packages/core/src/schema-generator.ts:94-107`:
+
+```typescript
+export function SchemaConstraint(constraints: {
+  minLength?: number;
+  maxLength?: number;
+  minimum?: number;
+  maximum?: number;
+  pattern?: string;
+  enum?: any[];
+  description?: string;
+  default?: any;
+  type?: string;
+}): PropertyDecorator
+```
+
+### String Constraints
+
+```typescript
+class TextInput {
+  @SchemaConstraint({
+    description: 'Username',
+    minLength: 3,
+    maxLength: 20,
+    pattern: '^[a-zA-Z0-9_]+$'
+  })
+  username!: string;
+
+  @SchemaConstraint({
+    description: 'Email address',
+    format: 'email',
+    minLength: 5
+  })
+  email!: string;
+
+  @SchemaConstraint({
+    description: 'User role',
+    enum: ['admin', 'user', 'guest'],
+    default: 'user'
+  })
+  role!: string;
+
+  @SchemaConstraint({
+    description: 'Website URL',
+    format: 'uri',
+    pattern: '^https://'
+  })
+  website!: string;
+}
+```
+
+**Available Constraints:**
+- `minLength` - Minimum string length
+- `maxLength` - Maximum string length
+- `pattern` - Regular expression (as string)
+- `format` - Format hint (`'email'`, `'uri'`, `'date-time'`, etc.)
+- `enum` - List of allowed values
+- `description` - Human-readable description
+- `default` - Default value if not provided
+
+### Number Constraints
+
+```typescript
+class RangeInput {
+  @SchemaConstraint({
+    description: 'Temperature in Celsius',
+    minimum: -273.15,
+    maximum: 1000
+  })
+  temperature!: number;
+
+  @SchemaConstraint({
+    description: 'Percentage',
+    minimum: 0,
+    maximum: 100
+  })
+  percentage!: number;
+
+  @SchemaConstraint({
+    description: 'Port number',
+    minimum: 1024,
+    maximum: 65535,
+    default: 8080
+  })
+  port!: number;
+
+  @SchemaConstraint({
+    description: 'Rating',
+    minimum: 1,
+    maximum: 5,
+    enum: [1, 2, 3, 4, 5]
+  })
+  rating!: number;
+}
+```
+
+**Available Constraints:**
+- `minimum` - Minimum value (inclusive)
+- `maximum` - Maximum value (inclusive)
+- `enum` - List of allowed values
+- `description` - Human-readable description
+- `default` - Default value if not provided
+
+### Array Constraints
+
+```typescript
+class ListInput {
+  @SchemaConstraint({
+    description: 'List of tags',
+    minItems: 1,
+    maxItems: 10
+  })
+  tags!: string[];
+
+  @SchemaConstraint({
+    description: 'Product IDs',
+    uniqueItems: true
+  })
+  productIds!: number[];
+
+  @SchemaConstraint({
+    description: 'Categories',
+    items: { type: 'string', enum: ['tech', 'business', 'lifestyle'] }
+  })
+  categories!: string[];
+}
+```
+
+**Available Constraints:**
+- `minItems` - Minimum array length
+- `maxItems` - Maximum array length
+- `uniqueItems` - Whether items must be unique
+- `items` - Schema for array items
+- `description` - Human-readable description
+
+<Note>
+From `packages/core/src/schema-generator.ts:247-249`, arrays always include an `items` schema. If not specified, it defaults to `{ type: 'string' }`.
+</Note>
+
+### Boolean Constraints
+
+```typescript
+class SettingsInput {
+  @SchemaConstraint({
+    description: 'Enable notifications',
+    default: true
+  })
+  notifications!: boolean;
+
+  @SchemaConstraint({
+    description: 'Dark mode enabled'
+  })
+  darkMode!: boolean;
+}
+```
+
+## @Optional Decorator
+
+The `@Optional` decorator marks a property as optional in the generated JSON Schema.
+
+### Type Signature
+
+From `packages/core/src/schema-generator.ts:85-89`:
+
+```typescript
+export function Optional(): PropertyDecorator {
+  return (target, propertyKey) => {
+    Reflect.defineMetadata('optional', true, target, propertyKey);
+  };
+}
+```
+
+### Usage
+
+```typescript
+class SearchInput {
+  // Required field (no @Optional)
+  @SchemaConstraint({ description: 'Search query' })
+  query!: string;
+
+  // Optional field
+  @Optional()
+  @SchemaConstraint({ 
+    description: 'Result limit',
+    minimum: 1,
+    maximum: 100,
+    default: 10
+  })
+  limit?: number;
+
+  // Optional with enum
+  @Optional()
+  @SchemaConstraint({
+    description: 'Sort order',
+    enum: ['asc', 'desc'],
+    default: 'asc'
+  })
+  sortOrder?: string;
+}
+```
+
+<Warning>
+Properties without `@Optional()` are marked as required in the JSON Schema. Always use `@Optional()` for optional properties, even if TypeScript marks them with `?`.
+</Warning>
+
+## Schema Generation
+
+LeanMCP automatically converts class definitions to JSON Schema.
+
+### How It Works
+
+From `packages/core/src/schema-generator.ts:143-263`, the schema generator:
+
+1. **Fast Path**: Uses pre-computed metadata from `leanmcp build` (production)
+2. **Slow Path**: Parses TypeScript types using `ts-morph` (development)
+3. Extracts property metadata using `reflect-metadata`
+4. Applies constraints from `@SchemaConstraint`
+5. Marks optional fields from `@Optional`
+
+```typescript
+// Input class
+class AnalyzeSentimentInput {
+  @SchemaConstraint({ description: 'Text to analyze', minLength: 1 })
+  text!: string;
+
+  @Optional()
+  @SchemaConstraint({ 
+    description: 'Language',
+    enum: ['en', 'es', 'fr'],
+    default: 'en'
+  })
+  language?: string;
+}
+
+// Generated JSON Schema
+{
+  "type": "object",
+  "properties": {
+    "text": {
+      "type": "string",
+      "description": "Text to analyze",
+      "minLength": 1
+    },
+    "language": {
+      "type": "string",
+      "description": "Language",
+      "enum": ["en", "es", "fr"],
+      "default": "en"
+    }
+  },
+  "required": ["text"]
+}
+```
+
+### Type Inference
+
+LeanMCP infers JSON Schema types from TypeScript types:
+
+| TypeScript Type | JSON Schema Type |
+|----------------|------------------|
+| `string` | `"string"` |
+| `number` | `"number"` |
+| `boolean` | `"boolean"` |
+| `string[]` | `{"type": "array", "items": {"type": "string"}}` |
+| `number[]` | `{"type": "array", "items": {"type": "number"}}` |
+| `object` | `"object"` |
+
+## Real-World Examples
+
+### Sentiment Analysis Input
+
+From `examples/basic-sentiment-tool/mcp/sentiment/index.ts:7-21`:
+
+```typescript
+class AnalyzeSentimentInput {
+  @SchemaConstraint({
+    description: 'Text to analyze',
+    minLength: 1
+  })
+  text!: string;
+  
+  @Optional()
+  @SchemaConstraint({
+    description: 'Language code',
+    enum: ['en', 'es', 'fr', 'de'],
+    default: 'en'
+  })
+  language?: string;
+}
+```
+
+### Sentiment Analysis Output
+
+From `examples/basic-sentiment-tool/mcp/sentiment/index.ts:23-42`:
+
+```typescript
+class AnalyzeSentimentOutput {
+  @SchemaConstraint({
+    enum: ['positive', 'negative', 'neutral']
+  })
+  sentiment!: string;
+  
+  @SchemaConstraint({
+    minimum: -1,
+    maximum: 1
+  })
+  score!: number;
+  
+  @SchemaConstraint({
+    minimum: 0,
+    maximum: 1
+  })
+  confidence!: number;
+  
+  language!: string;
+}
+```
+
+### Slack Message Input
+
+From `examples/slack-with-auth/mcp/slack/index.ts:9-27`:
+
+```typescript
+class SendMessageInput {
+  @SchemaConstraint({
+    description: 'Slack channel ID or name (e.g., #general)',
+    minLength: 1
+  })
+  channel!: string;
+
+  @SchemaConstraint({
+    description: 'Message text to send',
+    minLength: 1
+  })
+  text!: string;
+
+  @Optional()
+  @SchemaConstraint({
+    description: 'Thread timestamp to reply to'
+  })
+  threadTs?: string;
+}
+```
+
+### Channel Creation Input
+
+From `examples/slack-with-auth/mcp/slack/index.ts:63-83`:
+
+```typescript
+class CreateChannelInput {
+  @SchemaConstraint({
+    description: 'Channel name (without #)',
+    minLength: 1,
+    pattern: '^[a-z0-9-_]+$'
+  })
+  name!: string;
+
+  @Optional()
+  @SchemaConstraint({
+    description: 'Channel description'
+  })
+  description?: string;
+
+  @Optional()
+  @SchemaConstraint({
+    description: 'Whether the channel should be private',
+    default: false
+  })
+  isPrivate?: boolean;
+}
+```
+
+## Advanced Patterns
+
+### Nested Objects
+
+```typescript
+class Address {
+  @SchemaConstraint({ description: 'Street address' })
+  street!: string;
+
+  @SchemaConstraint({ description: 'City' })
+  city!: string;
+
+  @SchemaConstraint({ 
+    description: 'Postal code',
+    pattern: '^\\d{5}$'
+  })
+  zip!: string;
+}
+
+class UserProfile {
+  @SchemaConstraint({ description: 'User name' })
+  name!: string;
+
+  @SchemaConstraint({ description: 'User address' })
+  address!: Address; // Nested object
+}
+```
+
+### Conditional Validation
+
+```typescript
+class PaymentInput {
+  @SchemaConstraint({
+    description: 'Payment method',
+    enum: ['card', 'bank', 'paypal']
+  })
+  method!: string;
+
+  @Optional()
+  @SchemaConstraint({
+    description: 'Card number (required for card payments)',
+    pattern: '^\\d{16}$'
+  })
+  cardNumber?: string;
+
+  @Optional()
+  @SchemaConstraint({
+    description: 'Bank account (required for bank payments)',
+    pattern: '^\\d{10,12}$'
+  })
+  bankAccount?: string;
+}
+```
+
+### Complex Arrays
+
+```typescript
+class Item {
+  @SchemaConstraint({ description: 'Item ID' })
+  id!: string;
+
+  @SchemaConstraint({ 
+    description: 'Quantity',
+    minimum: 1
+  })
+  quantity!: number;
+}
+
+class OrderInput {
+  @SchemaConstraint({
+    description: 'Order items',
+    minItems: 1,
+    maxItems: 50
+  })
+  items!: Item[];
+
+  @Optional()
+  @SchemaConstraint({
+    description: 'Discount codes',
+    maxItems: 3
+  })
+  discountCodes?: string[];
+}
+```
+
+## Format Strings
+
+Common `format` values for string constraints:
+
+| Format | Description | Example |
+|--------|-------------|----------|
+| `'email'` | Email address | `user@example.com` |
+| `'uri'` | URI/URL | `https://example.com` |
+| `'date-time'` | ISO 8601 date-time | `2024-01-15T10:30:00Z` |
+| `'date'` | ISO 8601 date | `2024-01-15` |
+| `'time'` | ISO 8601 time | `10:30:00` |
+| `'uuid'` | UUID | `550e8400-e29b-41d4-a716-446655440000` |
+| `'hostname'` | Hostname | `example.com` |
+| `'ipv4'` | IPv4 address | `192.168.1.1` |
+| `'ipv6'` | IPv6 address | `2001:0db8::1` |
+
+```typescript
+class ContactInput {
+  @SchemaConstraint({ description: 'Email', format: 'email' })
+  email!: string;
+
+  @SchemaConstraint({ description: 'Website', format: 'uri' })
+  website!: string;
+
+  @SchemaConstraint({ description: 'Birth date', format: 'date' })
+  birthDate!: string;
+
+  @SchemaConstraint({ description: 'User ID', format: 'uuid' })
+  userId!: string;
+}
+```
+
+## Pattern Examples
+
+Common regex patterns for validation:
+
+```typescript
+class ValidationExamples {
+  @SchemaConstraint({
+    description: 'Alphanumeric only',
+    pattern: '^[a-zA-Z0-9]+$'
+  })
+  alphanumeric!: string;
+
+  @SchemaConstraint({
+    description: 'Phone number (US)',
+    pattern: '^\\+?1?\\d{10}$'
+  })
+  phone!: string;
+
+  @SchemaConstraint({
+    description: 'Hex color code',
+    pattern: '^#[0-9A-Fa-f]{6}$'
+  })
+  color!: string;
+
+  @SchemaConstraint({
+    description: 'Slack channel name',
+    pattern: '^[a-z0-9-_]+$'
+  })
+  channelName!: string;
+
+  @SchemaConstraint({
+    description: 'Version number',
+    pattern: '^\\d+\\.\\d+\\.\\d+$'
+  })
+  version!: string;
+}
+```
+
+<Warning>
+In pattern strings, backslashes must be escaped: use `\\d` instead of `\d`, `\\s` instead of `\s`, etc.
+</Warning>
+
+## Best Practices
+
+<Tabs>
+  <Tab title="Always Include">
+    - `description` on every property
+    - `@Optional()` for optional fields
+    - `default` values for optional fields when appropriate
+    - Validation constraints (`minLength`, `minimum`, etc.)
+    - `enum` for fields with limited choices
+  </Tab>
+  <Tab title="String Validation">
+    - Use `minLength` to prevent empty strings
+    - Use `maxLength` to prevent overly long inputs
+    - Use `pattern` for structured strings (emails, phones, etc.)
+    - Use `format` for standard formats (email, uri, date)
+    - Use `enum` for limited choices
+  </Tab>
+  <Tab title="Number Validation">
+    - Always set `minimum` and `maximum` bounds
+    - Use `enum` for discrete values (ratings, etc.)
+    - Consider using `default` for sensible defaults
+    - Use integers for counts, floats for measurements
+  </Tab>
+  <Tab title="Array Validation">
+    - Set `minItems` to ensure arrays aren't empty
+    - Set `maxItems` to prevent excessive input
+    - Define `items` schema for complex arrays
+    - Use `uniqueItems` when duplicates are invalid
+  </Tab>
+</Tabs>
+
+<Note>
+**Type Safety Tips:**
+- Use `!` for required fields: `name!: string`
+- Use `?` for optional fields: `age?: number`
+- Combine both: `@Optional()` decorator + `?` operator
+- Let TypeScript infer types when possible
+- Use strict compiler options for maximum safety
+</Note>
+
+## Common Mistakes
+
+### Missing @Optional
+
+```typescript
+// ❌ Wrong: Optional in TypeScript but required in schema
+class WrongInput {
+  name!: string;
+  age?: number; // Missing @Optional decorator
+}
+
+// ✅ Correct: Properly marked as optional
+class CorrectInput {
+  name!: string;
+  
+  @Optional()
+  age?: number;
+}
+```
+
+### Missing Description
+
+```typescript
+// ❌ Wrong: No description
+@SchemaConstraint({ minLength: 1 })
+name!: string;
+
+// ✅ Correct: Clear description
+@SchemaConstraint({ description: 'User full name', minLength: 1 })
+name!: string;
+```
+
+### Incorrect Pattern Escaping
+
+```typescript
+// ❌ Wrong: Single backslash
+@SchemaConstraint({ pattern: '^\d{3}$' })
+code!: string;
+
+// ✅ Correct: Double backslash
+@SchemaConstraint({ pattern: '^\\d{3}$' })
+code!: string;
+```
+
+## Next Steps
+
+- [Tools](/concepts/tools) - Use schemas with @Tool decorator
+- [Prompts](/concepts/prompts) - Use schemas with @Prompt decorator
+- [Decorators Overview](/concepts/decorators) - See all available decorators

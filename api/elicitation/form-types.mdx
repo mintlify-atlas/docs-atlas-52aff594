@@ -1,0 +1,521 @@
+---
+title: 'Form Types & Validation'
+description: 'Field types and validation rules for elicitation forms'
+---
+
+## ElicitationField
+
+Defines a single field in an elicitation form.
+
+### Field Schema
+
+```typescript
+interface ElicitationField {
+  name: string;
+  label: string;
+  type: FieldType;
+  description?: string;
+  required?: boolean;
+  defaultValue?: any;
+  options?: Array<{ label: string; value: any }>;
+  validation?: FieldValidation;
+  placeholder?: string;
+  helpText?: string;
+}
+```
+
+<ParamField path="name" type="string" required>
+  Unique field identifier (used as key in response object)
+</ParamField>
+
+<ParamField path="label" type="string" required>
+  Human-readable field label
+</ParamField>
+
+<ParamField path="type" type="FieldType" required>
+  Field type (see Field Types below)
+</ParamField>
+
+<ParamField path="description" type="string">
+  Additional description text
+</ParamField>
+
+<ParamField path="required" type="boolean" default="false">
+  Whether the field is required
+</ParamField>
+
+<ParamField path="defaultValue" type="any">
+  Default value for the field
+</ParamField>
+
+<ParamField path="options" type="Array<{label: string, value: any}>">
+  Options for select/multiselect fields
+</ParamField>
+
+<ParamField path="validation" type="FieldValidation">
+  Validation rules (see Validation below)
+</ParamField>
+
+<ParamField path="placeholder" type="string">
+  Placeholder text for input fields
+</ParamField>
+
+<ParamField path="helpText" type="string">
+  Help text displayed below the field
+</ParamField>
+
+---
+
+## Field Types
+
+### text
+
+Single-line text input.
+
+```typescript
+{
+  name: 'username',
+  label: 'Username',
+  type: 'text',
+  required: true,
+  placeholder: 'Enter username',
+  validation: {
+    minLength: 3,
+    maxLength: 20,
+    pattern: '^[a-zA-Z0-9_]+$',
+  },
+}
+```
+
+### textarea
+
+Multi-line text input.
+
+```typescript
+{
+  name: 'description',
+  label: 'Description',
+  type: 'textarea',
+  placeholder: 'Enter description',
+  helpText: 'Provide a detailed description',
+  validation: {
+    maxLength: 500,
+  },
+}
+```
+
+### number
+
+Numeric input.
+
+```typescript
+{
+  name: 'age',
+  label: 'Age',
+  type: 'number',
+  required: true,
+  defaultValue: 18,
+  validation: {
+    min: 0,
+    max: 120,
+  },
+}
+```
+
+### boolean
+
+Checkbox input.
+
+```typescript
+{
+  name: 'subscribe',
+  label: 'Subscribe to newsletter',
+  type: 'boolean',
+  defaultValue: false,
+}
+```
+
+### select
+
+Dropdown selection (single value).
+
+```typescript
+{
+  name: 'country',
+  label: 'Country',
+  type: 'select',
+  required: true,
+  options: [
+    { label: 'United States', value: 'US' },
+    { label: 'Canada', value: 'CA' },
+    { label: 'United Kingdom', value: 'GB' },
+  ],
+}
+```
+
+### multiselect
+
+Multiple selection.
+
+```typescript
+{
+  name: 'interests',
+  label: 'Interests',
+  type: 'multiselect',
+  options: [
+    { label: 'Technology', value: 'tech' },
+    { label: 'Sports', value: 'sports' },
+    { label: 'Music', value: 'music' },
+    { label: 'Travel', value: 'travel' },
+  ],
+}
+```
+
+### email
+
+Email input with validation.
+
+```typescript
+{
+  name: 'email',
+  label: 'Email Address',
+  type: 'email',
+  required: true,
+  placeholder: 'you@example.com',
+  validation: {
+    errorMessage: 'Please enter a valid email address',
+  },
+}
+```
+
+### url
+
+URL input with validation.
+
+```typescript
+{
+  name: 'website',
+  label: 'Website',
+  type: 'url',
+  placeholder: 'https://example.com',
+  validation: {
+    errorMessage: 'Please enter a valid URL',
+  },
+}
+```
+
+### date
+
+Date picker.
+
+```typescript
+{
+  name: 'birthdate',
+  label: 'Date of Birth',
+  type: 'date',
+  required: true,
+}
+```
+
+---
+
+## FieldValidation
+
+Validation rules for form fields.
+
+```typescript
+interface FieldValidation {
+  min?: number;
+  max?: number;
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+  customValidator?: (value: any) => boolean | string;
+  errorMessage?: string;
+}
+```
+
+<ParamField path="min" type="number">
+  Minimum value (for number fields)
+</ParamField>
+
+<ParamField path="max" type="number">
+  Maximum value (for number fields)
+</ParamField>
+
+<ParamField path="minLength" type="number">
+  Minimum length (for text fields)
+</ParamField>
+
+<ParamField path="maxLength" type="number">
+  Maximum length (for text fields)
+</ParamField>
+
+<ParamField path="pattern" type="string">
+  Regular expression pattern
+</ParamField>
+
+<ParamField path="customValidator" type="(value: any) => boolean | string">
+  Custom validation function. Return `true` for valid, `false` or error message string for invalid.
+</ParamField>
+
+<ParamField path="errorMessage" type="string">
+  Custom error message to display when validation fails
+</ParamField>
+
+### Validation Examples
+
+#### Text Length Validation
+
+```typescript
+{
+  name: 'password',
+  label: 'Password',
+  type: 'text',
+  required: true,
+  validation: {
+    minLength: 8,
+    maxLength: 100,
+    errorMessage: 'Password must be between 8-100 characters',
+  },
+}
+```
+
+#### Pattern Validation
+
+```typescript
+{
+  name: 'phone',
+  label: 'Phone Number',
+  type: 'text',
+  required: true,
+  placeholder: '(555) 123-4567',
+  validation: {
+    pattern: '^\\(\\d{3}\\) \\d{3}-\\d{4}$',
+    errorMessage: 'Phone must be in format: (555) 123-4567',
+  },
+}
+```
+
+#### Range Validation
+
+```typescript
+{
+  name: 'quantity',
+  label: 'Quantity',
+  type: 'number',
+  required: true,
+  validation: {
+    min: 1,
+    max: 100,
+    errorMessage: 'Quantity must be between 1 and 100',
+  },
+}
+```
+
+#### Custom Validation
+
+```typescript
+{
+  name: 'couponCode',
+  label: 'Coupon Code',
+  type: 'text',
+  validation: {
+    customValidator: (value) => {
+      if (!value) return true; // Optional field
+      return value.toUpperCase().startsWith('SAVE') || 'Coupon must start with SAVE';
+    },
+  },
+}
+```
+
+---
+
+## ValidationBuilder
+
+Fluent API for building validation rules.
+
+```typescript
+import { validation } from '@leanmcp/elicitation';
+
+const passwordValidation = validation()
+  .minLength(8)
+  .maxLength(100)
+  .pattern('^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)')
+  .errorMessage('Password must contain uppercase, lowercase, and number')
+  .build();
+```
+
+### Methods
+
+<ParamField path="min(value: number)" type="this">
+  Set minimum value
+</ParamField>
+
+<ParamField path="max(value: number)" type="this">
+  Set maximum value
+</ParamField>
+
+<ParamField path="minLength(value: number)" type="this">
+  Set minimum length
+</ParamField>
+
+<ParamField path="maxLength(value: number)" type="this">
+  Set maximum length
+</ParamField>
+
+<ParamField path="pattern(regex: string)" type="this">
+  Set regex pattern
+</ParamField>
+
+<ParamField path="customValidator(fn: (value: any) => boolean | string)" type="this">
+  Add custom validator function
+</ParamField>
+
+<ParamField path="errorMessage(message: string)" type="this">
+  Set error message
+</ParamField>
+
+<ParamField path="build()" type="FieldValidation">
+  Build the validation object
+</ParamField>
+
+### Usage Example
+
+```typescript
+import { ElicitationFormBuilder, validation } from '@leanmcp/elicitation';
+
+const form = new ElicitationFormBuilder()
+  .title('User Registration')
+  .addTextField('username', 'Username', {
+    required: true,
+    validation: validation()
+      .minLength(3)
+      .maxLength(20)
+      .pattern('^[a-zA-Z0-9_]+$')
+      .errorMessage('Username must be 3-20 alphanumeric characters or underscore')
+      .build(),
+  })
+  .addTextField('password', 'Password', {
+    required: true,
+    validation: validation()
+      .minLength(8)
+      .customValidator((value) => {
+        if (!/[A-Z]/.test(value)) return 'Must contain uppercase letter';
+        if (!/[a-z]/.test(value)) return 'Must contain lowercase letter';
+        if (!/\d/.test(value)) return 'Must contain number';
+        return true;
+      })
+      .build(),
+  })
+  .build();
+```
+
+---
+
+## ElicitationFormBuilder
+
+Fluent API for building forms.
+
+### Methods
+
+<ParamField path="title(title: string)" type="this">
+  Set form title
+</ParamField>
+
+<ParamField path="description(description: string)" type="this">
+  Set form description
+</ParamField>
+
+<ParamField path="condition(fn: (args: any) => boolean)" type="this">
+  Set condition for when elicitation should occur
+</ParamField>
+
+<ParamField path="addTextField(name, label, options?)" type="this">
+  Add text field
+</ParamField>
+
+<ParamField path="addTextAreaField(name, label, options?)" type="this">
+  Add textarea field
+</ParamField>
+
+<ParamField path="addNumberField(name, label, options?)" type="this">
+  Add number field
+</ParamField>
+
+<ParamField path="addBooleanField(name, label, options?)" type="this">
+  Add boolean field
+</ParamField>
+
+<ParamField path="addSelectField(name, label, options, fieldOptions?)" type="this">
+  Add select field
+</ParamField>
+
+<ParamField path="addMultiSelectField(name, label, options, fieldOptions?)" type="this">
+  Add multiselect field
+</ParamField>
+
+<ParamField path="addEmailField(name, label, options?)" type="this">
+  Add email field
+</ParamField>
+
+<ParamField path="addUrlField(name, label, options?)" type="this">
+  Add URL field
+</ParamField>
+
+<ParamField path="addDateField(name, label, options?)" type="this">
+  Add date field
+</ParamField>
+
+<ParamField path="addCustomField(field: ElicitationField)" type="this">
+  Add custom field with full control
+</ParamField>
+
+<ParamField path="build()" type="ElicitationConfig">
+  Build the final configuration
+</ParamField>
+
+### Complete Example
+
+```typescript
+import { ElicitationFormBuilder, validation } from '@leanmcp/elicitation';
+import { Tool } from '@leanmcp/core';
+import { Elicitation } from '@leanmcp/elicitation';
+
+@Tool({ description: 'Create event' })
+@Elicitation({
+  builder: () => {
+    return new ElicitationFormBuilder()
+      .title('Create Event')
+      .description('Fill out the event details')
+      .addTextField('title', 'Event Title', {
+        required: true,
+        validation: validation().minLength(5).maxLength(100).build(),
+      })
+      .addTextAreaField('description', 'Description', {
+        required: true,
+        placeholder: 'Describe your event...',
+      })
+      .addDateField('date', 'Event Date', {
+        required: true,
+      })
+      .addSelectField('category', 'Category', [
+        { label: 'Conference', value: 'conference' },
+        { label: 'Workshop', value: 'workshop' },
+        { label: 'Webinar', value: 'webinar' },
+      ])
+      .addNumberField('maxAttendees', 'Max Attendees', {
+        defaultValue: 50,
+        validation: validation().min(1).max(1000).build(),
+      })
+      .addBooleanField('requiresRegistration', 'Requires Registration', {
+        defaultValue: true,
+      })
+      .build();
+  },
+})
+async createEvent(args: CreateEventInput) {
+  // Implementation
+  return { eventId: '123', ...args };
+}
+```

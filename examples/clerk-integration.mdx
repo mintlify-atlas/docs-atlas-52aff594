@@ -1,0 +1,421 @@
+---
+title: 'Clerk Integration'
+description: 'Complete guide to integrating Clerk authentication with LeanMCP SDK'
+icon: 'user-shield'
+---
+
+This example demonstrates how to build an MCP server with Clerk authentication using the LeanMCP SDK.
+
+## Features
+
+- **Clerk Authentication**: Secure your MCP tools with Clerk
+- **Token Management**: Refresh tokens and manage user sessions
+- **Protected Endpoints**: Demonstrate authenticated tool access
+- **Zero-Config Service Discovery**: Services are automatically discovered from the `./mcp` directory
+- **Concurrency-Safe**: The `authUser` variable is implemented using AsyncLocalStorage for safe concurrent request handling
+
+## Prerequisites
+
+- Node.js 18+ installed
+- A Clerk account and application configured
+- Clerk Frontend API and Secret Key
+
+## Setup
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    npm install @leanmcp/core @leanmcp/auth dotenv
+    ```
+
+    Install dev dependencies:
+    ```bash
+    npm install -D @leanmcp/cli @types/node tsx typescript
+    ```
+  </Step>
+
+  <Step title="Configure Clerk">
+    - Create a Clerk application at [clerk.com](https://clerk.com)
+    - Enable JWT templates in your Clerk dashboard
+    - Note your Frontend API (e.g., `your-app.clerk.accounts.dev`)
+    - Get your Secret Key from the API Keys section
+  </Step>
+
+  <Step title="Set up environment variables">
+    Create a `.env` file with your Clerk credentials:
+
+    ```env
+    CLERK_FRONTEND_API=your-app.clerk.accounts.dev
+    CLERK_SECRET_KEY=sk_test_your-secret-key
+    PORT=3000
+    ```
+  </Step>
+
+  <Step title="Create the configuration file">
+    Create `mcp/config.ts` to initialize the Clerk provider:
+
+    ```typescript mcp/config.ts
+    import { AuthProvider } from "@leanmcp/auth";
+
+    // Validate required configuration
+    if (!process.env.CLERK_FRONTEND_API || !process.env.CLERK_SECRET_KEY) {
+      throw new Error(
+        'Missing required Clerk configuration. Please set CLERK_FRONTEND_API and CLERK_SECRET_KEY'
+      );
+    }
+
+    // Initialize authentication provider
+    export const authProvider = new AuthProvider('clerk', {
+      frontendApi: process.env.CLERK_FRONTEND_API,
+      secretKey: process.env.CLERK_SECRET_KEY
+    });
+
+    // Initialize the provider
+    await authProvider.init();
+    ```
+  </Step>
+
+  <Step title="Create the authentication service">
+    Create `mcp/auth/index.ts` for token management:
+
+    ```typescript mcp/auth/index.ts
+    import { Tool, SchemaConstraint } from "@leanmcp/core";
+    import { AuthProvider } from "@leanmcp/auth";
+    import { authProvider } from "../config.js";
+
+    class RefreshTokenInput {
+      @SchemaConstraint({
+        description: 'Refresh token to use for obtaining a new access token',
+        minLength: 1
+      })
+      refreshToken!: string;
+    }
+
+    class RefreshTokenOutput {
+      @SchemaConstraint({ description: 'New access token' })
+      access_token!: string;
+
+      @SchemaConstraint({ description: 'New ID token' })
+      id_token!: string;
+
+      @SchemaConstraint({ description: 'New refresh token (if rotation enabled)' })
+      refresh_token?: string;
+    }
+
+    export class AuthService {
+      private authProvider: AuthProvider;
+
+      constructor() {
+        this.authProvider = authProvider;
+      }
+
+      @Tool({ 
+        description: 'Refresh an expired access token using a refresh token',
+        inputClass: RefreshTokenInput
+      })
+      async refreshToken(args: RefreshTokenInput): Promise<RefreshTokenOutput> {
+        try {
+          const result = await this.authProvider.refreshToken(args.refreshToken);
+          
+          return {
+            access_token: result.access_token,
+            id_token: result.id_token,
+            refresh_token: result.refresh_token
+          };
+        } catch (error) {
+          throw new Error(
+            `Failed to refresh token: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      }
+
+      @Tool({ 
+        description: 'Get information about the authentication configuration and requirements' 
+      })
+      async getAuthInfo(): Promise<{
+        provider: string;
+        authRequired: boolean;
+        tokenType: string;
+        instructions: string;
+      }> {
+        return {
+          provider: this.authProvider.getProviderType(),
+          authRequired: true,
+          tokenType: 'Bearer',
+          instructions: 'Include your access token in the "token" field of authenticated requests.'
+        };
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Create protected demo service">
+    Create `mcp/demo/index.ts` with authenticated endpoints:
+
+    ```typescript mcp/demo/index.ts
+    import { Tool, SchemaConstraint } from "@leanmcp/core";
+    import { Authenticated } from "@leanmcp/auth";
+    import { authProvider } from "../config.js";
+
+    // authUser is globally available in @Authenticated methods
+    // It's implemented as a getter that reads from AsyncLocalStorage,
+    // making it 100% concurrency-safe
+
+    class EchoInput {
+      @SchemaConstraint({
+        description: 'Message to echo back',
+        minLength: 1
+      })
+      message!: string;
+    }
+
+    @Authenticated(authProvider)
+    export class DemoService {
+      @Tool({ 
+        description: 'Get the authenticated user profile information from Clerk'
+      })
+      async getUserProfile(): Promise<{
+        userId: string;
+        email: string;
+        firstName?: string;
+        lastName?: string;
+        imageUrl?: string;
+      }> {
+        // authUser is automatically available - injected by @Authenticated decorator
+        return {
+          userId: authUser.userId || authUser.sub,
+          email: authUser.email,
+          firstName: authUser.firstName,
+          lastName: authUser.lastName,
+          imageUrl: authUser.imageUrl
+        };
+      }
+
+      @Tool({ 
+        description: 'Echo back a message with authenticated user information',
+        inputClass: EchoInput
+      })
+      async echo(args: EchoInput): Promise<{ 
+        message: string;
+        timestamp: string;
+        userId: string;
+        userEmail: string;
+      }> {
+        return {
+          message: args.message,
+          timestamp: new Date().toISOString(),
+          userId: authUser.userId || authUser.sub,
+          userEmail: authUser.email
+        };
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Create the server entry point">
+    Create `main.ts`:
+
+    ```typescript main.ts
+    import 'dotenv/config';
+    import { createHTTPServer } from "@leanmcp/core";
+
+    await createHTTPServer({
+      name: 'clerk-auth',
+      version: '1.0.0',
+      port: parseInt(process.env.PORT || '3000'),
+      cors: true,
+      logging: true
+    });
+
+    console.log('\nClerk MCP Server Example');
+    ```
+  </Step>
+</Steps>
+
+## Running the Server
+
+<Tabs>
+  <Tab title="Development">
+    ```bash
+    npm run dev
+    ```
+    The server will start with auto-reload on `http://localhost:3000`
+  </Tab>
+  <Tab title="Production">
+    ```bash
+    npm run build
+    npm start
+    ```
+  </Tab>
+</Tabs>
+
+## Authentication Flow
+
+<Steps>
+  <Step title="Obtain tokens from Clerk">
+    Use Clerk's authentication flow (e.g., Sign In, Sign Up) to obtain:
+    - `access_token`
+    - `id_token`
+    - `refresh_token`
+  </Step>
+
+  <Step title="Use protected tools">
+    Pass the `id_token` via `_meta.authorization.token` in your MCP request.
+    The `@Authenticated` decorator automatically extracts and verifies the token.
+  </Step>
+
+  <Step title="Refresh expired tokens">
+    When tokens expire, use the `refreshToken` tool with your `refresh_token` to obtain new tokens.
+  </Step>
+</Steps>
+
+## Available Tools
+
+### AuthService
+
+#### `refreshToken`
+Refresh an expired access token using a refresh token.
+
+**Input:**
+```json
+{
+  "refreshToken": "your-refresh-token"
+}
+```
+
+**Output:**
+```json
+{
+  "access_token": "new-access-token",
+  "id_token": "new-id-token",
+  "refresh_token": "new-refresh-token"
+}
+```
+
+#### `getAuthInfo`
+Get information about the authentication configuration.
+
+**Output:**
+```json
+{
+  "provider": "clerk",
+  "authRequired": true,
+  "tokenType": "Bearer",
+  "instructions": "Include your access token in the 'token' field..."
+}
+```
+
+### DemoService (Protected)
+
+#### `getUserProfile`
+Get the authenticated user's profile information.
+
+**Output:**
+```json
+{
+  "userId": "user_2abc123xyz",
+  "email": "user@example.com",
+  "firstName": "John",
+  "lastName": "Doe",
+  "imageUrl": "https://img.clerk.com/..."
+}
+```
+
+#### `echo`
+Echo back a message with user information.
+
+**Input:**
+```json
+{
+  "message": "Hello, World!"
+}
+```
+
+**Output:**
+```json
+{
+  "message": "Hello, World!",
+  "timestamp": "2024-01-01T12:00:00.000Z",
+  "userId": "user_2abc123xyz",
+  "userEmail": "user@example.com"
+}
+```
+
+## Clerk-Specific Features
+
+### JWT Templates
+
+Clerk uses JWT templates to customize token claims. Make sure your JWT template includes:
+- `sub` (subject/user ID)
+- `email`
+- `email_verified`
+- `given_name` (first name)
+- `family_name` (last name)
+
+### Enable Refresh Tokens
+
+To enable refresh tokens in Clerk:
+
+<Steps>
+  <Step title="Go to Clerk Dashboard">
+    Navigate to your Clerk Dashboard
+  </Step>
+  <Step title="Open JWT Templates">
+    Go to JWT Templates section
+  </Step>
+  <Step title="Enable Refresh Tokens">
+    Enable "Refresh tokens" in your template settings
+  </Step>
+</Steps>
+
+## How It Works
+
+### Service Discovery
+The MCP server automatically discovers and registers all services exported from files in the `./mcp` directory.
+
+### Authentication
+- The `@Authenticated` decorator protects tools that require authentication
+- Clerk JWT tokens are verified using JWKS (JSON Web Key Set)
+- Token verification includes signature validation and issuer verification
+- The `authUser` variable is automatically available in protected methods
+- **Concurrency Safe**: `authUser` is implemented as a getter that reads from AsyncLocalStorage
+
+### Package.json Scripts
+
+```json package.json
+{
+  "scripts": {
+    "dev": "leanmcp dev",
+    "start": "leanmcp start",
+    "build": "leanmcp build"
+  },
+  "dependencies": {
+    "@leanmcp/auth": "^0.4.0",
+    "@leanmcp/core": "^0.4.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@leanmcp/cli": "^0.4.0",
+    "@types/node": "^22.10.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
+```
+
+## Security Notes
+
+<Warning>
+  - Never commit your `.env` file or expose your Clerk credentials
+  - Always use HTTPS in production
+  - Clerk Secret Keys should be kept secure and never exposed to client-side code
+  - Implement proper token storage and refresh logic in your client
+  - Consider implementing rate limiting for production use
+</Warning>
+
+## Learn More
+
+- [Clerk Documentation](https://clerk.com/docs)
+- [Clerk JWT Templates](https://clerk.com/docs/backend-requests/making/jwt-templates)
+- [LeanMCP Authentication Guide](/authentication/overview)
+- [MCP Protocol Specification](https://modelcontextprotocol.io)

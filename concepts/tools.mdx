@@ -1,0 +1,315 @@
+---
+title: 'Tools'
+description: 'Learn how to define callable functions with the @Tool decorator'
+---
+
+# Tools
+
+Tools are callable functions that perform actions in your MCP server. They're like API endpoints - AI agents can discover and call them to accomplish tasks.
+
+## The @Tool Decorator
+
+The `@Tool` decorator marks a method as an MCP tool with automatic name inference from the method name.
+
+### Basic Usage
+
+```typescript
+import { Tool, SchemaConstraint } from '@leanmcp/core';
+
+class AnalyzeSentimentInput {
+  @SchemaConstraint({ description: 'Text to analyze', minLength: 1 })
+  text!: string;
+}
+
+export class SentimentService {
+  @Tool({ 
+    description: 'Analyze sentiment of text',
+    inputClass: AnalyzeSentimentInput
+  })
+  async analyzeSentiment(args: AnalyzeSentimentInput) {
+    // Tool implementation
+    return {
+      sentiment: 'positive',
+      score: 0.8,
+      confidence: 0.9
+    };
+  }
+}
+```
+
+**Key Points:**
+- Tool name is automatically derived from method name (`analyzeSentiment`)
+- Input schema is explicitly defined via `inputClass`
+- Full type safety at compile time
+
+## Tool Definition
+
+### Type Signature
+
+From `packages/core/src/decorators.ts:83-101`:
+
+```typescript
+export interface ToolOptions {
+  description?: string;
+  inputClass?: any; // Optional: Explicit input class for schema generation
+  securitySchemes?: SecurityScheme[];
+}
+
+export function Tool(options: ToolOptions = {}): MethodDecorator
+```
+
+### Options
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `description` | `string` | No | Human-readable description of what the tool does |
+| `inputClass` | `Class` | No | Class defining input schema (omit for tools with no input) |
+| `securitySchemes` | `SecurityScheme[]` | No | Authentication requirements (MCP authorization spec) |
+
+## Input and Output Schemas
+
+### Defining Input Classes
+
+Use class-based schemas with decorators for validation:
+
+```typescript
+class WeatherInput {
+  @SchemaConstraint({
+    description: 'City name',
+    minLength: 1
+  })
+  city!: string;
+
+  @Optional()
+  @SchemaConstraint({
+    description: 'Units',
+    enum: ['metric', 'imperial'],
+    default: 'metric'
+  })
+  units?: string;
+}
+```
+
+### Defining Output Types
+
+Return types can be:
+- Plain objects
+- Typed interfaces
+- Class instances with `@SchemaConstraint` decorators
+
+```typescript
+class WeatherOutput {
+  @SchemaConstraint({ description: 'Temperature value' })
+  temperature!: number;
+
+  @SchemaConstraint({ 
+    description: 'Weather conditions',
+    enum: ['sunny', 'cloudy', 'rainy', 'snowy']
+  })
+  conditions!: string;
+}
+
+@Tool({ 
+  description: 'Get current weather',
+  inputClass: WeatherInput
+})
+async getCurrentWeather(args: WeatherInput): Promise<WeatherOutput> {
+  return {
+    temperature: 72,
+    conditions: 'sunny'
+  };
+}
+```
+
+## Real-World Examples
+
+### Calculator Tool
+
+```typescript
+class CalculatorInput {
+  @SchemaConstraint({
+    description: 'First number',
+    minimum: -1000000,
+    maximum: 1000000
+  })
+  a!: number;
+
+  @SchemaConstraint({
+    description: 'Second number',
+    minimum: -1000000,
+    maximum: 1000000
+  })
+  b!: number;
+}
+
+export class CalculatorService {
+  @Tool({ 
+    description: 'Add two numbers',
+    inputClass: CalculatorInput
+  })
+  async add(args: CalculatorInput): Promise<{ result: number }> {
+    return { result: args.a + args.b };
+  }
+
+  @Tool({ 
+    description: 'Divide two numbers',
+    inputClass: CalculatorInput
+  })
+  async divide(args: CalculatorInput): Promise<{ result: number }> {
+    if (args.b === 0) {
+      throw new Error('Division by zero');
+    }
+    return { result: args.a / args.b };
+  }
+}
+```
+
+### Slack Message Tool
+
+```typescript
+class SendMessageInput {
+  @SchemaConstraint({
+    description: 'Slack channel ID or name',
+    minLength: 1
+  })
+  channel!: string;
+
+  @SchemaConstraint({
+    description: 'Message text to send',
+    minLength: 1
+  })
+  text!: string;
+
+  @Optional()
+  @SchemaConstraint({ description: 'Thread timestamp for replies' })
+  threadTs?: string;
+}
+
+export class SlackService {
+  @Tool({ 
+    description: 'Send a message to a Slack channel',
+    inputClass: SendMessageInput
+  })
+  async sendMessage(args: SendMessageInput) {
+    console.log(`Sending to ${args.channel}: ${args.text}`);
+    
+    return {
+      success: true,
+      channel: args.channel,
+      timestamp: Date.now().toString()
+    };
+  }
+}
+```
+
+## Tools Without Input
+
+For tools that don't require parameters, omit the `inputClass`:
+
+```typescript
+@Tool({ description: 'Get sentiment analysis statistics' })
+async getSentimentStats() {
+  return {
+    totalAnalyses: 1000,
+    avgProcessingTime: 45,
+    supportedLanguages: ['en', 'es', 'fr', 'de']
+  };
+}
+```
+
+## Security and Authentication
+
+### OAuth Requirements
+
+Use `securitySchemes` to specify authentication requirements:
+
+```typescript
+@Tool({
+  description: 'Fetch private user data',
+  securitySchemes: [{ type: 'oauth2', scopes: ['read:user'] }]
+})
+async fetchPrivateData() {
+  // Tool implementation
+}
+```
+
+### Security Scheme Types
+
+From `packages/core/src/decorators.ts:19-24`:
+
+```typescript
+export interface SecurityScheme {
+  type: 'noauth' | 'oauth2';
+  scopes?: string[]; // Required OAuth scopes (for oauth2 type)
+}
+```
+
+<Note>
+If both `noauth` and `oauth2` are listed, the tool works anonymously but OAuth unlocks more features. If omitted, the tool inherits server-level defaults.
+</Note>
+
+## Best Practices
+
+<Tabs>
+  <Tab title="Schema Design">
+    - Use descriptive field names that clearly indicate purpose
+    - Always include `description` in `@SchemaConstraint`
+    - Set appropriate validation constraints (`minLength`, `minimum`, `enum`, etc.)
+    - Use `@Optional()` for non-required fields
+    - Provide sensible `default` values when appropriate
+  </Tab>
+  <Tab title="Error Handling">
+    - Throw descriptive errors for invalid inputs
+    - Validate business logic constraints in the method body
+    - Return structured error responses when appropriate
+    - Use TypeScript's type system to catch errors at compile time
+  </Tab>
+  <Tab title="Naming">
+    - Use clear, action-oriented method names (e.g., `sendMessage`, `analyzeSentiment`)
+    - Follow camelCase convention
+    - Avoid abbreviations unless widely understood
+    - Method name becomes the tool name automatically
+  </Tab>
+</Tabs>
+
+<Warning>
+The tool name is automatically derived from the method name using `String(propertyKey)`. Ensure your method names are clear and descriptive as they'll be visible to AI agents.
+</Warning>
+
+## Common Patterns
+
+### CRUD Operations
+
+```typescript
+export class DataService {
+  @Tool({ description: 'Create new record', inputClass: CreateInput })
+  async create(args: CreateInput) { /* ... */ }
+
+  @Tool({ description: 'Read record by ID', inputClass: ReadInput })
+  async read(args: ReadInput) { /* ... */ }
+
+  @Tool({ description: 'Update existing record', inputClass: UpdateInput })
+  async update(args: UpdateInput) { /* ... */ }
+
+  @Tool({ description: 'Delete record by ID', inputClass: DeleteInput })
+  async delete(args: DeleteInput) { /* ... */ }
+}
+```
+
+### Async Operations
+
+All tool methods should return `Promise<T>` for consistency:
+
+```typescript
+@Tool({ description: 'Process data' })
+async processData(args: ProcessInput): Promise<ProcessOutput> {
+  const result = await externalAPI.call(args);
+  return result;
+}
+```
+
+## Next Steps
+
+- Learn about [Prompts](/concepts/prompts) for LLM interaction templates
+- Explore [Schema Validation](/concepts/schema-validation) for advanced constraints
+- See [Decorators Overview](/concepts/decorators) for all available decorators

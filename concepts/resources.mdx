@@ -1,0 +1,460 @@
+---
+title: 'Resources'
+description: 'Learn how to expose data endpoints with the @Resource decorator'
+---
+
+# Resources
+
+Resources are data endpoints that provide information without side effects. They're like REST GET endpoints - they expose data that AI agents can read and use.
+
+## The @Resource Decorator
+
+The `@Resource` decorator marks a method as an MCP resource with automatic URI generation.
+
+### Basic Usage
+
+```typescript
+import { Resource } from '@leanmcp/core';
+
+export class ServiceName {
+  @Resource({ description: 'Service statistics' })
+  getStats() {
+    return { 
+      uptime: process.uptime(),
+      requestCount: 1523
+    };
+  }
+}
+```
+
+**Key Points:**
+- Resource URI is automatically generated: `ui://servicename/getStats`
+- No side effects - resources should be read-only
+- Returns data in any serializable format
+
+## Resource Definition
+
+### Type Signature
+
+From `packages/core/src/decorators.ts:143-192`:
+
+```typescript
+export interface ResourceOptions {
+  description?: string;
+  mimeType?: string;
+  inputClass?: any; // Optional: Explicit input class for schema generation
+  uri?: string; // Optional: Explicit URI (uses ui:// scheme by default)
+}
+
+export function Resource(options: ResourceOptions = {}): MethodDecorator
+```
+
+### Options
+
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `description` | `string` | No | `''` | Human-readable description |
+| `mimeType` | `string` | No | `'application/json'` | Content type of the resource |
+| `inputClass` | `Class` | No | - | Class defining input schema |
+| `uri` | `string` | No | Auto-generated | Custom URI (uses `ui://` scheme) |
+
+## URI Generation
+
+The `@Resource` decorator automatically generates URIs using the `ui://` scheme:
+
+```typescript
+// From decorators.ts:171-175
+const className = target.constructor.name.toLowerCase().replace('service', '');
+const resourceUri = options.uri ?? `ui://${className}/${resourceName}`;
+```
+
+### Default URI Pattern
+
+```typescript
+export class WeatherService {
+  @Resource({ description: 'Supported cities' })
+  getSupportedCities() {
+    return { cities: ['New York', 'London', 'Tokyo'] };
+  }
+  // Generated URI: ui://weather/getSupportedCities
+}
+```
+
+### Custom URI
+
+```typescript
+@Resource({ 
+  description: 'API documentation',
+  uri: 'ui://docs/api'
+})
+getApiDocs() {
+  return { version: '1.0.0', endpoints: [...] };
+}
+```
+
+<Note>
+The `ui://` scheme is required by ext-apps hosts and ensures compatibility with MCP client implementations.
+</Note>
+
+## Data Endpoints
+
+### Simple Resources
+
+Resources without input parameters:
+
+```typescript
+export class SystemService {
+  @Resource({ description: 'System health status' })
+  getHealth() {
+    return {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    };
+  }
+
+  @Resource({ description: 'Service configuration' })
+  getConfig() {
+    return {
+      version: '1.0.0',
+      features: ['auth', 'caching', 'logging'],
+      limits: { maxRequests: 1000 }
+    };
+  }
+}
+```
+
+### Parameterized Resources
+
+Resources with input schemas:
+
+```typescript
+class AuthenticatedResourceInput {
+  // Authentication handled via _meta, no fields needed
+}
+
+export class SlackService {
+  @Resource({ 
+    description: 'List all channels in workspace',
+    mimeType: 'application/json',
+    inputClass: AuthenticatedResourceInput
+  })
+  listChannels(args: AuthenticatedResourceInput) {
+    return {
+      channels: [
+        { id: 'C123', name: 'general', memberCount: 150 },
+        { id: 'C456', name: 'random', memberCount: 120 }
+      ]
+    };
+  }
+}
+```
+
+## Real-World Examples
+
+### Slack Workspace Information
+
+From `examples/slack-with-auth/mcp/slack/index.ts:427-443`:
+
+```typescript
+class AuthenticatedResourceInput {}
+
+@Resource({ 
+  description: 'Get information about the Slack workspace',
+  mimeType: 'application/json',
+  inputClass: AuthenticatedResourceInput
+})
+async getWorkspaceInfo(args: AuthenticatedResourceInput) {
+  return {
+    id: 'T1234567890',
+    name: 'My Workspace',
+    domain: 'myworkspace',
+    emailDomain: 'company.com',
+    icon: {
+      image_default: true
+    }
+  };
+}
+```
+
+### Weather Service Resources
+
+From README.md examples:
+
+```typescript
+export class WeatherService {
+  @Resource({ description: 'Supported cities list' })
+  getSupportedCities() {
+    return {
+      cities: ['New York', 'London', 'Tokyo', 'Paris', 'Sydney'],
+      count: 5
+    };
+  }
+
+  @Resource({ description: 'Weather data sources' })
+  getDataSources() {
+    return {
+      sources: [
+        { name: 'OpenWeatherMap', reliability: 0.95 },
+        { name: 'WeatherAPI', reliability: 0.90 }
+      ],
+      lastUpdated: new Date().toISOString()
+    };
+  }
+}
+```
+
+### Dashboard Configuration
+
+From `examples/social-monitor/mcp/dashboard/index.ts:39-63`:
+
+```typescript
+class DashboardInput {
+  @Optional()
+  @SchemaConstraint({
+    description: 'Initial tab to display',
+    enum: ['discovery', 'my-posts', 'mentions'],
+    default: 'discovery'
+  })
+  initialTab?: string;
+}
+
+@Resource({ 
+  description: 'Dashboard configuration',
+  inputClass: DashboardInput
+})
+async getDashboardConfig(input: DashboardInput) {
+  return {
+    status: 'ready',
+    initialTab: input.initialTab ?? 'discovery',
+    config: {
+      hnUsername: process.env.HN_USERNAME,
+      openaiConfigured: !!process.env.OPENAI_API_KEY
+    }
+  };
+}
+```
+
+## MIME Types
+
+### Supported Content Types
+
+```typescript
+// JSON (default)
+@Resource({ 
+  description: 'User data',
+  mimeType: 'application/json'
+})
+getUserData() {
+  return { id: 1, name: 'John' };
+}
+
+// Plain text
+@Resource({ 
+  description: 'Service logs',
+  mimeType: 'text/plain'
+})
+getLogs() {
+  return 'Log entry 1\nLog entry 2\nLog entry 3';
+}
+
+// HTML
+@Resource({ 
+  description: 'Dashboard HTML',
+  mimeType: 'text/html'
+})
+getDashboard() {
+  return '<html><body><h1>Dashboard</h1></body></html>';
+}
+
+// CSV
+@Resource({ 
+  description: 'Export data',
+  mimeType: 'text/csv'
+})
+getExport() {
+  return 'id,name,email\n1,John,john@example.com';
+}
+```
+
+## Resources vs Tools
+
+| Feature | Resources | Tools |
+|---------|-----------|-------|
+| Purpose | Expose data for reading | Execute actions |
+| Side Effects | None (read-only) | Can modify state |
+| URI | Auto-generated `ui://` | N/A |
+| Return Value | Data (any format) | Results of action |
+| Use Case | Configuration, lists, status | Operations, mutations |
+
+<Tabs>
+  <Tab title="When to Use Resources">
+    Use Resources when you need to:
+    - Expose read-only data
+    - Provide configuration or metadata
+    - List available options or entities
+    - Share status or health information
+    - Offer static or semi-static content
+
+    Resources are perfect for:
+    - API documentation endpoints
+    - Service health checks
+    - Available options lists
+    - Workspace/tenant information
+    - Read-only data access
+  </Tab>
+  <Tab title="When to Use Tools">
+    Use Tools when you need to:
+    - Perform actions with side effects
+    - Create, update, or delete data
+    - Execute operations or computations
+    - Call external APIs
+    - Process input and return results
+
+    Tools are perfect for:
+    - Sending messages
+    - Creating records
+    - Running calculations
+    - Triggering workflows
+    - Mutating state
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+### Design Guidelines
+
+<Note>
+**Resource Design Principles:**
+- Keep resources read-only (no side effects)
+- Return consistent data structures
+- Use appropriate MIME types
+- Cache expensive computations
+- Document data format clearly
+- Include timestamps for time-sensitive data
+</Note>
+
+### Caching Strategy
+
+```typescript
+export class DataService {
+  private cache: Map<string, { data: any; timestamp: number }> = new Map();
+  private cacheTTL = 60000; // 1 minute
+
+  @Resource({ description: 'Expensive data computation' })
+  getExpensiveData() {
+    const cached = this.cache.get('expensive');
+    
+    if (cached && Date.now() - cached.timestamp < this.cacheTTL) {
+      return cached.data;
+    }
+
+    const data = this.computeExpensiveData();
+    this.cache.set('expensive', { data, timestamp: Date.now() });
+    return data;
+  }
+
+  private computeExpensiveData() {
+    // Expensive computation
+    return { result: 'computed' };
+  }
+}
+```
+
+### Error Handling
+
+```typescript
+@Resource({ description: 'User profile data' })
+getUserProfile() {
+  try {
+    // Fetch data
+    return { id: 1, name: 'John' };
+  } catch (error) {
+    return {
+      error: true,
+      message: 'Failed to load profile',
+      timestamp: new Date().toISOString()
+    };
+  }
+}
+```
+
+### Versioned Resources
+
+```typescript
+export class APIService {
+  @Resource({ 
+    description: 'API v1 schema',
+    uri: 'ui://api/v1/schema'
+  })
+  getSchemaV1() {
+    return { version: '1.0.0', endpoints: [...] };
+  }
+
+  @Resource({ 
+    description: 'API v2 schema',
+    uri: 'ui://api/v2/schema'
+  })
+  getSchemaV2() {
+    return { version: '2.0.0', endpoints: [...] };
+  }
+}
+```
+
+<Warning>
+Resources should not modify state or have side effects. For operations that change data, use Tools instead.
+</Warning>
+
+## Common Patterns
+
+### List Resources
+
+```typescript
+@Resource({ description: 'Available items' })
+listItems() {
+  return {
+    items: [
+      { id: 1, name: 'Item 1' },
+      { id: 2, name: 'Item 2' }
+    ],
+    total: 2,
+    timestamp: new Date().toISOString()
+  };
+}
+```
+
+### Status Resources
+
+```typescript
+@Resource({ description: 'Service status' })
+getStatus() {
+  return {
+    status: 'operational',
+    uptime: process.uptime(),
+    version: '1.0.0',
+    healthy: true
+  };
+}
+```
+
+### Configuration Resources
+
+```typescript
+@Resource({ description: 'Feature flags' })
+getFeatureFlags() {
+  return {
+    features: {
+      newUI: true,
+      betaFeatures: false,
+      advancedMode: true
+    },
+    lastUpdated: '2024-01-15T10:00:00Z'
+  };
+}
+```
+
+## Next Steps
+
+- Learn about [Tools](/concepts/tools) for executable actions
+- Explore [Prompts](/concepts/prompts) for LLM templates
+- See [Decorators Overview](/concepts/decorators) for all decorators

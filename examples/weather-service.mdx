@@ -1,0 +1,325 @@
+---
+title: 'Weather Service'
+description: 'Build a weather service with tools, prompts, and resources'
+icon: 'cloud-sun'
+---
+
+## Overview
+
+This example demonstrates how to build a complete weather service using the LeanMCP SDK. You'll learn how to:
+
+- Create tools that fetch data
+- Define prompts for LLM interactions
+- Expose resources for static data
+- Handle optional parameters with enums
+- Use multiple decorators in one service
+
+## Complete Example
+
+This example is based on the weather service pattern from the [LeanMCP README](https://github.com/LeanMCP/leanmcp-sdk).
+
+<Steps>
+  <Step title="Define Input Schema">
+    Create input classes with optional parameters and enums:
+
+    ```typescript
+    import { Tool, Prompt, Resource, SchemaConstraint, Optional } from "@leanmcp/core";
+
+    class WeatherInput {
+      @SchemaConstraint({
+        description: 'City name',
+        minLength: 1
+      })
+      city!: string;
+
+      @Optional()
+      @SchemaConstraint({
+        description: 'Units',
+        enum: ['metric', 'imperial'],
+        default: 'metric'
+      })
+      units?: string;
+    }
+    ```
+
+    **Key points:**
+    - `@Optional()` makes the units parameter optional
+    - `enum` restricts values to specific options
+    - `default` provides a fallback value
+  </Step>
+
+  <Step title="Define Output Schema">
+    Create a structured output class with constraints:
+
+    ```typescript
+    class WeatherOutput {
+      @SchemaConstraint({ description: 'Temperature value' })
+      temperature!: number;
+
+      @SchemaConstraint({ 
+        description: 'Weather conditions',
+        enum: ['sunny', 'cloudy', 'rainy', 'snowy']
+      })
+      conditions!: string;
+
+      @SchemaConstraint({ 
+        description: 'Humidity percentage',
+        minimum: 0,
+        maximum: 100
+      })
+      humidity!: number;
+    }
+    ```
+
+    **Key points:**
+    - `enum` ensures valid condition values
+    - `minimum` and `maximum` validate humidity range
+    - Descriptive constraints improve AI agent understanding
+  </Step>
+
+  <Step title="Implement the Tool">
+    Create a tool to fetch current weather:
+
+    ```typescript
+    export class WeatherService {
+      @Tool({ 
+        description: 'Get current weather for a city',
+        inputClass: WeatherInput
+      })
+      async getCurrentWeather(args: WeatherInput): Promise<WeatherOutput> {
+        // In production, call a real weather API
+        // This is a simulation for demonstration
+        const weatherData = await this.fetchWeatherData(args.city, args.units);
+        
+        return {
+          temperature: weatherData.temp,
+          conditions: weatherData.conditions,
+          humidity: weatherData.humidity
+        };
+      }
+
+      private async fetchWeatherData(city: string, units?: string) {
+        // Simulate API call
+        return {
+          temp: units === 'imperial' ? 72 : 22,
+          conditions: 'sunny' as const,
+          humidity: 65
+        };
+      }
+    }
+    ```
+
+    **Key points:**
+    - Tool handles optional `units` parameter
+    - Private helper method simulates API call
+    - Type safety ensures correct data structure
+  </Step>
+
+  <Step title="Add a Prompt">
+    Create a prompt template for weather queries:
+
+    ```typescript
+    @Prompt({ description: 'Generate weather query prompt' })
+    weatherPrompt(args: { city?: string }) {
+      return {
+        messages: [{
+          role: 'user',
+          content: {
+            type: 'text',
+            text: `What's the weather forecast for ${args.city || 'the city'}?`
+          }
+        }]
+      };
+    }
+    ```
+
+    **Key points:**
+    - Prompts help standardize LLM interactions
+    - Return structured messages with role and content
+    - Optional parameters allow flexible prompts
+  </Step>
+
+  <Step title="Add a Resource">
+    Expose static data through resources:
+
+    ```typescript
+    @Resource({ description: 'Supported cities list' })
+    getSupportedCities() {
+      return {
+        cities: ['New York', 'London', 'Tokyo', 'Paris', 'Sydney'],
+        count: 5
+      };
+    }
+    ```
+
+    **Key points:**
+    - Resources provide read-only data
+    - Useful for configuration and metadata
+    - No input parameters needed for simple resources
+  </Step>
+
+  <Step title="Set Up the Server">
+    Create your server entry point:
+
+    ```typescript
+    import { createHTTPServer } from "@leanmcp/core";
+
+    await createHTTPServer({
+      name: "weather-service",
+      version: "1.0.0",
+      port: 8080,
+      cors: true,
+      logging: true
+    });
+
+    console.log("Weather Service running on port 8080");
+    ```
+  </Step>
+</Steps>
+
+## Project Structure
+
+```
+weather-service/
+├── main.ts                          # Server entry point
+├── package.json
+├── tsconfig.json
+└── mcp/
+    └── weather/
+        └── index.ts                 # Weather service
+```
+
+## Testing the Service
+
+Start your server:
+
+```bash
+npm start
+```
+
+### Example Tool Calls
+
+**Get weather in metric units:**
+```json
+{
+  "name": "getCurrentWeather",
+  "arguments": {
+    "city": "London",
+    "units": "metric"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "temperature": 22,
+  "conditions": "sunny",
+  "humidity": 65
+}
+```
+
+**Get weather with default units:**
+```json
+{
+  "name": "getCurrentWeather",
+  "arguments": {
+    "city": "New York"
+  }
+}
+```
+
+### Example Prompt Call
+
+```json
+{
+  "name": "weatherPrompt",
+  "arguments": {
+    "city": "Tokyo"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": {
+        "type": "text",
+        "text": "What's the weather forecast for Tokyo?"
+      }
+    }
+  ]
+}
+```
+
+### Example Resource Call
+
+```json
+{
+  "uri": "weather://getSupportedCities"
+}
+```
+
+**Response:**
+```json
+{
+  "cities": ["New York", "London", "Tokyo", "Paris", "Sydney"],
+  "count": 5
+}
+```
+
+## Integrating Real APIs
+
+To connect to a real weather API like OpenWeatherMap:
+
+```typescript
+private async fetchWeatherData(city: string, units?: string) {
+  const apiKey = process.env.OPENWEATHER_API_KEY;
+  const unitsParam = units || 'metric';
+  
+  const response = await fetch(
+    `https://api.openweathermap.org/data/2.5/weather?q=${city}&units=${unitsParam}&appid=${apiKey}`
+  );
+  
+  const data = await response.json();
+  
+  return {
+    temp: data.main.temp,
+    conditions: this.mapConditions(data.weather[0].main),
+    humidity: data.main.humidity
+  };
+}
+
+private mapConditions(condition: string): 'sunny' | 'cloudy' | 'rainy' | 'snowy' {
+  const mapping: Record<string, 'sunny' | 'cloudy' | 'rainy' | 'snowy'> = {
+    'Clear': 'sunny',
+    'Clouds': 'cloudy',
+    'Rain': 'rainy',
+    'Drizzle': 'rainy',
+    'Snow': 'snowy'
+  };
+  return mapping[condition] || 'cloudy';
+}
+```
+
+## Key Takeaways
+
+- **Tools, Prompts, Resources**: One service can use all three MCP primitives
+- **Optional Parameters**: Use `@Optional()` and `default` values
+- **Enums**: Restrict values to valid options
+- **Type Safety**: Schemas prevent invalid data
+- **API Integration**: Easy to connect to external services
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Calculator Service" icon="calculator" href="/examples/calculator">
+    Learn error handling and multiple operations
+  </Card>
+  <Card title="Authentication" icon="lock" href="/features/authentication">
+    Add authentication to your services
+  </Card>
+</CardGroup>

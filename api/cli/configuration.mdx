@@ -1,0 +1,183 @@
+---
+title: 'CLI Configuration'
+description: 'Configuration options for the LeanMCP CLI'
+---
+
+## Global Configuration
+
+The LeanMCP CLI stores configuration in `~/.leanmcp/config.json`.
+
+### Config File Location
+
+<ResponseField name="path" type="string">
+  `~/.leanmcp/config.json` on Unix-like systems
+  
+  `C:\Users\<username>\.leanmcp\config.json` on Windows
+</ResponseField>
+
+### Configuration Schema
+
+<ResponseField name="apiKey" type="string">
+  Your LeanMCP API key (set via `leanmcp login`)
+</ResponseField>
+
+<ResponseField name="apiUrl" type="string">
+  API endpoint URL. Defaults to `https://api.leanmcp.com`
+  
+  Allowed values:
+  - `https://api.leanmcp.com` (production)
+  - `https://devapi.leanmcp.com` (development)
+  - `https://qaapi.leanmcp.com` (QA)
+  - `http://localhost:3001` (local testing)
+</ResponseField>
+
+<ResponseField name="lastUpdated" type="string">
+  ISO timestamp of last configuration update
+</ResponseField>
+
+## Project Configuration
+
+Each deployed project has a local configuration file at `.leanmcp/config.json` in the project directory.
+
+### Project Config Schema
+
+<ResponseField name="projectId" type="string" required>
+  Unique project identifier from LeanMCP cloud
+</ResponseField>
+
+<ResponseField name="projectName" type="string" required>
+  Human-readable project name
+</ResponseField>
+
+<ResponseField name="subdomain" type="string" required>
+  Deployment subdomain (e.g., 'my-app' for my-app.leanmcp.app)
+</ResponseField>
+
+<ResponseField name="url" type="string" required>
+  Full deployment URL (e.g., https://my-app.leanmcp.app)
+</ResponseField>
+
+<ResponseField name="lastDeployedAt" type="string" required>
+  ISO timestamp of last deployment
+</ResponseField>
+
+<ResponseField name="buildId" type="string">
+  ID of the last successful build
+</ResponseField>
+
+<ResponseField name="deploymentId" type="string">
+  ID of the current active deployment
+</ResponseField>
+
+### Example
+
+```json .leanmcp/config.json
+{
+  "projectId": "proj_abc123def456",
+  "projectName": "my-mcp-server",
+  "subdomain": "my-app",
+  "url": "https://my-app.leanmcp.app",
+  "lastDeployedAt": "2026-03-03T10:30:00.000Z",
+  "buildId": "build_xyz789",
+  "deploymentId": "deploy_qrs012"
+}
+```
+
+## Environment Variables
+
+The CLI respects the following environment variables:
+
+### Authentication
+
+<ParamField path="LEANMCP_API_KEY" type="string">
+  Override API key from config file (not recommended for production)
+</ParamField>
+
+### AWS Cognito (if using Cognito auth)
+
+<ParamField path="AWS_REGION" type="string">
+  AWS region for Cognito
+</ParamField>
+
+<ParamField path="COGNITO_USER_POOL_ID" type="string">
+  Cognito User Pool ID
+</ParamField>
+
+<ParamField path="COGNITO_CLIENT_ID" type="string">
+  Cognito App Client ID
+</ParamField>
+
+<ParamField path="COGNITO_CLIENT_SECRET" type="string">
+  Cognito App Client Secret (if using client credentials)
+</ParamField>
+
+### Auth0 (if using Auth0 auth)
+
+<ParamField path="AUTH0_DOMAIN" type="string">
+  Auth0 domain (e.g., 'your-tenant.auth0.com')
+</ParamField>
+
+<ParamField path="AUTH0_CLIENT_ID" type="string">
+  Auth0 application client ID
+</ParamField>
+
+<ParamField path="AUTH0_CLIENT_SECRET" type="string">
+  Auth0 application client secret
+</ParamField>
+
+<ParamField path="AUTH0_AUDIENCE" type="string">
+  Auth0 API audience
+</ParamField>
+
+### Clerk (if using Clerk auth)
+
+<ParamField path="CLERK_FRONTEND_API" type="string">
+  Clerk frontend API domain
+</ParamField>
+
+<ParamField path="CLERK_SECRET_KEY" type="string">
+  Clerk secret key
+</ParamField>
+
+## TypeScript Configuration
+
+The CLI generates projects with the following recommended `tsconfig.json`:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "target": "ES2022",
+    "moduleResolution": "Bundler",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "outDir": "dist",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
+```
+
+<Note>
+  The `experimentalDecorators` and `emitDecoratorMetadata` options are required for using `@Tool`, `@Authenticated`, `@Elicitation`, and other decorators.
+</Note>
+
+## Package.json Scripts
+
+Generated projects include these npm scripts:
+
+```json package.json
+{
+  "scripts": {
+    "dev": "leanmcp dev",
+    "build": "leanmcp build",
+    "start": "leanmcp start",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/main.js",
+    "start:node": "node dist/main.js",
+    "clean": "rm -rf dist"
+  }
+}
+```

@@ -1,0 +1,212 @@
+---
+title: 'CLI Overview'
+description: 'Command-line interface for scaffolding and managing LeanMCP projects'
+icon: 'terminal'
+---
+
+## What is the LeanMCP CLI?
+
+The LeanMCP CLI is a command-line interface that streamlines the entire MCP server development workflow from project creation to production deployment.
+
+**Key capabilities:**
+- Quick project scaffolding with production-ready templates
+- Hot-reload development server with UI component building
+- One-command cloud deployment to LeanMCP platform
+- Interactive setup with guided prompts
+- Project management and environment variable handling
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install -g @leanmcp/cli
+```
+
+```bash yarn
+yarn global add @leanmcp/cli
+```
+
+```bash pnpm
+pnpm add -g @leanmcp/cli
+```
+
+</CodeGroup>
+
+**Or use without installing:**
+
+```bash
+npx @leanmcp/cli create my-mcp-server
+```
+
+**Requirements:**
+- Node.js >= 18.0.0
+- npm >= 9.0.0
+
+## Quick Start
+
+<Steps>
+
+<Step title="Create a new project">
+  ```bash
+  leanmcp create my-mcp-server
+  cd my-mcp-server
+  ```
+
+  Interactive prompts will guide you through setup.
+</Step>
+
+<Step title="Start development server">
+  ```bash
+  npm run dev
+  ```
+
+  Your server will start at `http://localhost:3001` with hot-reload enabled.
+</Step>
+
+<Step title="Test your endpoints">
+  ```bash
+  curl http://localhost:3001/health
+  curl http://localhost:3001/mcp
+  ```
+</Step>
+
+</Steps>
+
+## Generated Project Structure
+
+The CLI creates a clean, production-ready structure:
+
+```
+my-mcp-server/
+├── main.ts              # Entry point with HTTP server
+├── package.json         # Dependencies and scripts
+├── tsconfig.json        # TypeScript configuration
+├── .gitignore           # Git ignore rules
+├── .env                 # Environment variables
+└── mcp/                 # Services directory
+    └── example/
+        └── index.ts     # Example service
+```
+
+## Available Commands
+
+### Local Development
+
+| Command | Description |
+|---------|-------------|
+| `leanmcp create <name>` | Create a new MCP server project |
+| `leanmcp add <service>` | Add a new service to existing project |
+| `leanmcp dev` | Start development server with hot-reload |
+| `leanmcp build` | Build UI components and compile TypeScript |
+| `leanmcp start` | Build and start production server |
+
+### Cloud Deployment
+
+| Command | Description |
+|---------|-------------|
+| `leanmcp login` | Authenticate with LeanMCP Cloud |
+| `leanmcp logout` | Remove stored API key |
+| `leanmcp whoami` | Show authentication status |
+| `leanmcp deploy [folder]` | Deploy to LeanMCP Cloud |
+
+### Project Management
+
+| Command | Description |
+|---------|-------------|
+| `leanmcp projects list` | List your cloud projects |
+| `leanmcp projects get <id>` | Get project details |
+| `leanmcp projects delete <id>` | Delete a cloud project |
+
+### Environment Variables
+
+| Command | Description |
+|---------|-------------|
+| `leanmcp env list [folder]` | List environment variables |
+| `leanmcp env set <key=value>` | Set an environment variable |
+| `leanmcp env get <key>` | Get environment variable value |
+| `leanmcp env remove <key>` | Remove environment variable |
+| `leanmcp env pull [folder]` | Download variables to local file |
+| `leanmcp env push [folder]` | Upload variables from local file |
+
+## NPM Scripts
+
+Generated projects include helpful npm scripts:
+
+```json
+{
+  "scripts": {
+    "dev": "leanmcp dev",
+    "build": "leanmcp build",
+    "start": "leanmcp start",
+    "start:node": "node dist/main.js",
+    "clean": "rm -rf dist"
+  }
+}
+```
+
+## Configuration
+
+### Port Configuration
+
+Set the port in your `.env` file:
+
+```bash .env
+PORT=3001
+NODE_ENV=development
+```
+
+Or use an environment variable:
+
+```bash
+PORT=4000 npm run dev
+```
+
+### TypeScript Configuration
+
+Generated `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "target": "ES2022",
+    "moduleResolution": "Bundler",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "outDir": "dist",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
+```
+
+## Global Options
+
+Available for all commands:
+
+```bash
+-v, --version    # Output the current version
+-h, --help       # Display help for command
+-d, --debug      # Enable debug logging
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Create Command" icon="plus" href="/cli/create">
+    Learn about creating new projects with interactive setup
+  </Card>
+  <Card title="Add Service" icon="layer-plus" href="/cli/add-service">
+    Add new services to existing projects
+  </Card>
+  <Card title="Dev Commands" icon="code" href="/cli/dev-commands">
+    Development, build, and start commands
+  </Card>
+  <Card title="Deploy" icon="rocket" href="/guides/deployment">
+    Deploy to LeanMCP Cloud
+  </Card>
+</CardGroup>

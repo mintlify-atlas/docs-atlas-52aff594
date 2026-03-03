@@ -1,0 +1,371 @@
+---
+title: 'AWS Cognito Integration'
+description: 'Complete guide to integrating AWS Cognito authentication with LeanMCP SDK (using LeanMCP Auth)'
+icon: 'aws'
+---
+
+This example demonstrates how to build an MCP server with LeanMCP authentication. While this example uses LeanMCP's built-in auth, the same pattern can be adapted for AWS Cognito by using the generic JWT verification capabilities.
+
+## Features
+
+- **LeanMCP Authentication**: Uses `@leanmcp/auth` to verify user tokens
+- **Token Management**: Refresh tokens and manage user sessions
+- **Protected Endpoints**: Demonstrate authenticated tool access
+- **Zero-Config Service Discovery**: Services are automatically discovered from the `./mcp` directory
+- **Concurrency-Safe**: The `authUser` variable is implemented using AsyncLocalStorage for safe concurrent request handling
+
+<Info>
+  For AWS Cognito integration, you can use the same `AuthProvider` pattern with a custom JWT verification strategy. Contact LeanMCP support for AWS Cognito integration guidance.
+</Info>
+
+## Prerequisites
+
+- Node.js 18+ installed
+- A LeanMCP account with API key (or AWS Cognito credentials for custom setup)
+
+## Setup
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    npm install @leanmcp/core @leanmcp/auth dotenv
+    ```
+
+    Install dev dependencies:
+    ```bash
+    npm install -D @leanmcp/cli @types/node tsx typescript
+    ```
+  </Step>
+
+  <Step title="Set up environment variables">
+    Create a `.env` file:
+
+    ```env
+    PORT=3000
+    LEANMCP_API_KEY=your_api_key_here
+    ```
+
+    <Note>
+      You can generate an API Key with the `SDK` scope from the LeanMCP dashboard or via the Orchestration API.
+    </Note>
+  </Step>
+
+  <Step title="Create the configuration file">
+    Create `mcp/config.ts` to initialize the auth provider:
+
+    ```typescript mcp/config.ts
+    import { AuthProvider } from "@leanmcp/auth";
+
+    // Initialize authentication provider
+    // The API key is used by the SDK to authorize verification of user tokens
+    export const authProvider = new AuthProvider('leanmcp', {
+        apiKey: process.env.LEANMCP_API_KEY,
+        orchestrationApiUrl: 'http://localhost:3001',
+        authUrl: 'http://localhost:3003'
+    });
+
+    // Initialize the provider
+    await authProvider.init();
+    ```
+
+    <Warning>
+      For production AWS Cognito integration, replace the LeanMCP provider configuration with Cognito-specific JWT verification settings.
+    </Warning>
+  </Step>
+
+  <Step title="Create the demo service">
+    Create `mcp/demo/index.ts` with authenticated endpoints:
+
+    ```typescript mcp/demo/index.ts
+    import { Tool, SchemaConstraint } from "@leanmcp/core";
+    import { Authenticated } from "@leanmcp/auth";
+    import { authProvider } from "../config.js";
+
+    class EchoInput {
+        @SchemaConstraint({
+            description: 'Message to echo back',
+            minLength: 1
+        })
+        message!: string;
+    }
+
+    class RefreshTokenInput {
+        @SchemaConstraint({
+            description: 'The refresh token to use for obtaining a new ID token',
+            minLength: 1
+        })
+        refreshToken!: string;
+    }
+
+    export class DemoService {
+        /**
+         * Get the authenticated user's profile
+         */
+        @Authenticated(authProvider)
+        @Tool({
+            description: 'Get the authenticated user profile information'
+        })
+        async getUserProfile(): Promise<{
+            userId: string;
+            email: string;
+            name?: string;
+            picture?: string;
+        }> {
+            // authUser is automatically available - injected by @Authenticated decorator
+            return {
+                userId: authUser.uid || authUser.sub,
+                email: authUser.email,
+                name: authUser.name,
+                picture: authUser.picture
+            };
+        }
+
+        /**
+         * Echo back a message with user information
+         */
+        @Tool({
+            description: 'Echo back a message with authenticated user information',
+            inputClass: EchoInput
+        })
+        async echo(args: EchoInput): Promise<{
+            message: string;
+            timestamp: string;
+            userId: string;
+            userEmail: string;
+        }> {
+            return {
+                message: args.message,
+                timestamp: new Date().toISOString(),
+                userId: authUser.uid || authUser.sub,
+                userEmail: authUser.email
+            };
+        }
+
+        /**
+         * Refresh a user token
+         * This tool is NOT protected by authentication
+         */
+        @Tool({
+            description: 'Refresh a user token using a refresh token',
+            inputClass: RefreshTokenInput,
+        })
+        async refreshToken(args: RefreshTokenInput): Promise<any> {
+            return await authProvider.refreshToken(args.refreshToken);
+        }
+    }
+    ```
+  </Step>
+
+  <Step title="Create the server entry point">
+    Create `main.ts`:
+
+    ```typescript main.ts
+    import 'dotenv/config';
+    import { createHTTPServer } from "@leanmcp/core";
+
+    await createHTTPServer({
+      name: 'leanmcp-auth',
+      version: '1.0.0',
+      port: parseInt(process.env.PORT || '3000'),
+      cors: true,
+      logging: true
+    });
+
+    console.log('\nLeanMCP Auth Server Example');
+    ```
+  </Step>
+</Steps>
+
+## Running the Server
+
+<Tabs>
+  <Tab title="Development">
+    ```bash
+    npm run dev
+    ```
+    The server will start with auto-reload on `http://localhost:3000`
+  </Tab>
+  <Tab title="Production">
+    ```bash
+    npm run build
+    npm start
+    ```
+  </Tab>
+</Tabs>
+
+## Authentication Flow
+
+<Steps>
+  <Step title="Obtain user token">
+    Authenticate with your provider (LeanMCP or AWS Cognito) to obtain a JWT token.
+  </Step>
+
+  <Step title="Use protected tools">
+    Pass the token via `_meta.authorization.token` in your MCP request:
+    
+    ```json
+    {
+      "_meta": {
+        "authorization": {
+          "token": "your-jwt-token"
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Refresh expired tokens">
+    When tokens expire, use the `refreshToken` tool to obtain new tokens.
+  </Step>
+</Steps>
+
+## Available Tools
+
+### DemoService
+
+#### `getUserProfile` (Protected)
+Get the authenticated user's profile information.
+
+**Output:**
+```json
+{
+  "userId": "user_123",
+  "email": "user@example.com",
+  "name": "John Doe",
+  "picture": "https://example.com/avatar.jpg"
+}
+```
+
+#### `echo` (Protected)
+Echo back a message with user information.
+
+**Input:**
+```json
+{
+  "message": "Hello, World!"
+}
+```
+
+**Output:**
+```json
+{
+  "message": "Hello, World!",
+  "timestamp": "2024-01-01T12:00:00.000Z",
+  "userId": "user_123",
+  "userEmail": "user@example.com"
+}
+```
+
+#### `refreshToken`
+Refresh a user token using a refresh token.
+
+**Input:**
+```json
+{
+  "refreshToken": "your-refresh-token"
+}
+```
+
+**Output:**
+```json
+{
+  "access_token": "new-access-token",
+  "id_token": "new-id-token",
+  "refresh_token": "new-refresh-token"
+}
+```
+
+## AWS Cognito Adaptation
+
+To adapt this example for AWS Cognito:
+
+<Steps>
+  <Step title="Install AWS SDK">
+    ```bash
+    npm install @aws-sdk/client-cognito-identity-provider
+    ```
+  </Step>
+
+  <Step title="Configure Cognito environment variables">
+    ```env
+    AWS_REGION=us-east-1
+    COGNITO_USER_POOL_ID=us-east-1_XXXXXXXXX
+    COGNITO_CLIENT_ID=your-client-id
+    COGNITO_CLIENT_SECRET=your-client-secret
+    ```
+  </Step>
+
+  <Step title="Update config.ts">
+    Replace the LeanMCP AuthProvider with a custom Cognito JWT verifier:
+
+    ```typescript
+    import { CognitoJwtVerifier } from "aws-jwt-verify";
+
+    export const verifier = CognitoJwtVerifier.create({
+      userPoolId: process.env.COGNITO_USER_POOL_ID!,
+      tokenUse: "id",
+      clientId: process.env.COGNITO_CLIENT_ID!,
+    });
+    ```
+  </Step>
+
+  <Step title="Custom authentication decorator">
+    Create a custom authentication implementation using the Cognito verifier for JWT validation.
+  </Step>
+</Steps>
+
+<Info>
+  For detailed AWS Cognito integration guidance, please contact LeanMCP support or refer to the AWS Cognito documentation.
+</Info>
+
+## How It Works
+
+### Service Discovery
+The MCP server automatically discovers and registers all services exported from files in the `./mcp` directory.
+
+### Authentication
+- The `@Authenticated` decorator protects tools that require authentication
+- JWT tokens are verified using the configured auth provider
+- The `authUser` variable is automatically available in protected methods
+- **Concurrency Safe**: `authUser` is implemented as a getter that reads from AsyncLocalStorage
+- Access user information directly via `authUser.uid`, `authUser.email`, etc.
+
+### Package.json Scripts
+
+```json package.json
+{
+  "scripts": {
+    "dev": "leanmcp dev",
+    "start": "leanmcp start",
+    "build": "leanmcp build"
+  },
+  "dependencies": {
+    "@leanmcp/auth": "^0.4.0",
+    "@leanmcp/core": "^0.4.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@leanmcp/cli": "^0.4.0",
+    "@types/node": "^22.10.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
+```
+
+## Security Notes
+
+<Warning>
+  - Never commit your `.env` file or expose your API keys
+  - Always use HTTPS in production
+  - Implement proper token storage and refresh logic in your client
+  - Consider implementing rate limiting for production use
+  - For AWS Cognito, follow AWS security best practices
+</Warning>
+
+## Learn More
+
+- [AWS Cognito Documentation](https://docs.aws.amazon.com/cognito/)
+- [LeanMCP Authentication Guide](/authentication/overview)
+- [MCP Protocol Specification](https://modelcontextprotocol.io)
+- [aws-jwt-verify Library](https://github.com/awslabs/aws-jwt-verify)

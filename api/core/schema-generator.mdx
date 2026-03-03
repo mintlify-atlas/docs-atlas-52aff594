@@ -1,0 +1,380 @@
+---
+title: Schema Generator
+description: JSON Schema generation from TypeScript classes
+---
+
+The schema generator converts TypeScript classes to JSON Schema with support for constraints, validation, and type inference.
+
+## Functions
+
+### classToJsonSchemaWithConstraints()
+
+Converts a TypeScript class to JSON Schema with full constraint support.
+
+```typescript
+function classToJsonSchemaWithConstraints(
+  classConstructor: new () => any,
+  sourceFilePath?: string
+): object
+```
+
+<ParamField path="classConstructor" type="new () => any" required>
+  Class constructor to convert to JSON Schema
+</ParamField>
+
+<ParamField path="sourceFilePath" type="string">
+  Optional path to source file for type parsing (used in dev mode)
+</ParamField>
+
+<ResponseField name="schema" type="object">
+  JSON Schema object with properties, required fields, and constraints
+  
+  ```typescript
+  {
+    type: 'object',
+    properties: { ... },
+    required: [...]
+  }
+  ```
+</ResponseField>
+
+#### Example
+
+```typescript
+import { classToJsonSchemaWithConstraints, SchemaConstraint, Optional } from '@leanmcp/core';
+
+class UserInput {
+  @SchemaConstraint({
+    description: 'User email',
+    pattern: '^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$',
+  })
+  email!: string;
+
+  @SchemaConstraint({
+    description: 'User age',
+    minimum: 0,
+    maximum: 120,
+  })
+  age!: number;
+
+  @Optional()
+  @SchemaConstraint({ description: 'Optional bio' })
+  bio?: string;
+}
+
+const schema = classToJsonSchemaWithConstraints(UserInput);
+console.log(JSON.stringify(schema, null, 2));
+```
+
+**Output:**
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "email": {
+      "type": "string",
+      "description": "User email",
+      "pattern": "^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$"
+    },
+    "age": {
+      "type": "number",
+      "description": "User age",
+      "minimum": 0,
+      "maximum": 120
+    },
+    "bio": {
+      "type": "string",
+      "description": "Optional bio"
+    }
+  },
+  "required": ["email", "age"]
+}
+```
+
+### classToJsonSchema()
+
+Basic JSON Schema generation without constraints (legacy).
+
+```typescript
+function classToJsonSchema(classConstructor: new () => any): object
+```
+
+<ParamField path="classConstructor" type="new () => any" required>
+  Class constructor to convert to JSON Schema
+</ParamField>
+
+<ResponseField name="schema" type="object">
+  Basic JSON Schema object without constraints
+</ResponseField>
+
+#### Example
+
+```typescript
+import { classToJsonSchema } from '@leanmcp/core';
+
+class SimpleInput {
+  name!: string;
+  age!: number;
+}
+
+const schema = classToJsonSchema(SimpleInput);
+// { type: 'object', properties: { name: { type: 'string' }, age: { type: 'number' } } }
+```
+
+## Type Inference
+
+The schema generator uses two strategies for type inference:
+
+### 1. Pre-computed Metadata (Production)
+
+In production builds (`leanmcp build`), schemas are pre-computed and stored in `dist/schema-metadata.json`:
+
+```json
+{
+  "UserInput": {
+    "email": { "type": "string" },
+    "age": { "type": "number" },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}
+```
+
+This provides **fast startup** with no runtime parsing.
+
+### 2. Runtime Parsing (Development)
+
+In development mode, the schema generator uses `ts-morph` to parse TypeScript source files and extract exact type information:
+
+```typescript
+import { parseClassTypesSync, registerClassSource } from '@leanmcp/core';
+
+// Register source file for a class
+registerClassSource('UserInput', './src/types.ts');
+
+// Parse types at runtime
+const types = parseClassTypesSync(UserInput);
+```
+
+This provides **accurate array item types** and complex type support during development.
+
+## Supported Types
+
+The schema generator supports the following TypeScript types:
+
+| TypeScript Type | JSON Schema Type | Notes |
+|----------------|------------------|-------|
+| `string` | `"string"` | - |
+| `number` | `"number"` | - |
+| `boolean` | `"boolean"` | - |
+| `Array<T>` | `{ "type": "array", "items": ... }` | Item type inferred |
+| `T[]` | `{ "type": "array", "items": ... }` | Item type inferred |
+| `object` | `"object"` | - |
+| Custom class | `"object"` | Recursive schema generation |
+
+### Array Type Inference
+
+```typescript
+import { SchemaConstraint } from '@leanmcp/core';
+
+class ArrayExample {
+  @SchemaConstraint({ description: 'List of tags' })
+  tags!: string[]; // Inferred as array of strings
+
+  @SchemaConstraint({ description: 'List of numbers' })
+  scores!: number[]; // Inferred as array of numbers
+
+  @SchemaConstraint({ description: 'Generic array (fallback)' })
+  items!: any[]; // Falls back to array of strings
+}
+```
+
+## Constraint Types
+
+Supported JSON Schema constraints:
+
+### String Constraints
+
+```typescript
+class StringConstraints {
+  @SchemaConstraint({
+    description: 'Username',
+    minLength: 3,
+    maxLength: 20,
+    pattern: '^[a-zA-Z0-9_]+$',
+  })
+  username!: string;
+
+  @SchemaConstraint({
+    description: 'Status',
+    enum: ['active', 'inactive', 'pending'],
+  })
+  status!: string;
+}
+```
+
+### Number Constraints
+
+```typescript
+class NumberConstraints {
+  @SchemaConstraint({
+    description: 'Rating',
+    minimum: 0,
+    maximum: 5,
+  })
+  rating!: number;
+
+  @SchemaConstraint({
+    description: 'Priority',
+    enum: [1, 2, 3],
+  })
+  priority!: number;
+}
+```
+
+### Array Constraints
+
+```typescript
+class ArrayConstraints {
+  @SchemaConstraint({
+    description: 'Tags',
+    type: 'array',
+    items: { type: 'string' },
+  })
+  tags!: string[];
+}
+```
+
+### Default Values
+
+```typescript
+class DefaultValues {
+  @SchemaConstraint({
+    description: 'Enabled flag',
+    default: true,
+  })
+  enabled?: boolean;
+
+  @SchemaConstraint({
+    description: 'Limit',
+    default: 10,
+  })
+  limit?: number;
+}
+```
+
+## Decorators
+
+### @Optional
+
+Marks a property as optional in the JSON Schema.
+
+```typescript
+import { Optional } from '@leanmcp/core';
+
+class OptionalExample {
+  required!: string; // Required by default
+
+  @Optional()
+  optional?: string; // Marked as optional
+}
+```
+
+### @SchemaConstraint
+
+Adds constraints and metadata to a property.
+
+```typescript
+import { SchemaConstraint } from '@leanmcp/core';
+
+class ConstraintExample {
+  @SchemaConstraint({
+    description: 'User email',
+    pattern: '^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$',
+  })
+  email!: string;
+}
+```
+
+See [Decorators](/api/core/decorators#schemaconstraint) for full constraint options.
+
+## Advanced Usage
+
+### Nested Classes
+
+```typescript
+import { SchemaConstraint } from '@leanmcp/core';
+
+class Address {
+  @SchemaConstraint({ description: 'Street' })
+  street!: string;
+
+  @SchemaConstraint({ description: 'City' })
+  city!: string;
+}
+
+class User {
+  @SchemaConstraint({ description: 'User name' })
+  name!: string;
+
+  @SchemaConstraint({ description: 'User address' })
+  address!: Address; // Nested class - generates nested object schema
+}
+```
+
+### Type Inference from Constraints
+
+If `design:type` metadata is unavailable, the generator infers types from constraints:
+
+```typescript
+class InferredTypes {
+  @SchemaConstraint({
+    minLength: 5, // Inferred as string
+  })
+  field1!: string;
+
+  @SchemaConstraint({
+    minimum: 0, // Inferred as number
+  })
+  field2!: number;
+
+  @SchemaConstraint({
+    enum: [true, false], // Inferred as boolean
+  })
+  field3!: boolean;
+}
+```
+
+### Source File Registration
+
+```typescript
+import { registerClassSource, clearTypeCache } from '@leanmcp/core';
+
+// Register source file for a class (for runtime parsing)
+registerClassSource('UserInput', './src/inputs/user.ts');
+
+// Clear type cache (useful for hot-reload)
+clearTypeCache();
+```
+
+## Performance
+
+### Production Mode
+
+- Uses pre-computed schema metadata from `dist/schema-metadata.json`
+- **Zero runtime parsing** - schemas loaded from JSON
+- Fast server startup (~10ms for schema loading)
+
+### Development Mode
+
+- Falls back to runtime parsing with `ts-morph`
+- Slower startup (~100-500ms for parsing)
+- Accurate type inference for complex types
+
+## Related
+
+- [Decorators](/api/core/decorators) - Property decorators for constraints
+- [Type Parser](/api/core/schema-generator#type-inference) - Runtime type parsing

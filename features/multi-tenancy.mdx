@@ -1,0 +1,334 @@
+---
+title: Multi-Tenancy
+description: Build multi-tenant MCP servers with session isolation and per-user data
+---
+
+LeanMCP provides built-in multi-tenancy support through session management and authentication. Each user or organization can have isolated data and state.
+
+## Session Management
+
+### LeanMCPSessionProvider
+
+The `LeanMCPSessionProvider` is a drop-in replacement for `Map<string, StreamableHTTPServerTransport>` with automatic persistence:
+
+```typescript
+import { LeanMCPSessionProvider } from '@leanmcp/core';
+
+// Before: const transports = new Map<string, StreamableHTTPServerTransport>();
+// After:
+const sessions = new LeanMCPSessionProvider();
+```
+
+**Environment Auto-Detection:**
+- **Local Development**: Uses in-memory session store
+- **LeanMCP Lambda** (`LEANMCP_LAMBDA=true`): Uses DynamoDB session store
+- **Explicit Override**: Pass custom `sessionStore` option
+
+Source: `packages/core/src/session-provider.ts:34`
+
+### Basic Usage
+
+```typescript
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { LeanMCPSessionProvider } from '@leanmcp/core';
+
+const sessions = new LeanMCPSessionProvider();
+
+const handleRequest = async (request: Request) => {
+  const sessionId = extractSessionId(request);
+  
+  // Get or recreate transport for this session
+  let transport = await sessions.getOrRecreate(
+    sessionId,
+    () => createServer(), // Fresh server instance
+    {
+      onsessioninitialized: (sid) => {
+        console.log('Session initialized:', sid);
+      },
+      onclose: () => {
+        console.log('Session closed');
+      }
+    }
+  );
+  
+  if (!transport) {
+    // Session doesn't exist, create new one
+    transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => sessionId,
+      onsessioninitialized: async (sid) => {
+        await sessions.set(sid, transport);
+      }
+    });
+    
+    const server = createServer();
+    await server.connect(transport);
+  }
+  
+  return transport.handleRequest(request);
+};
+```
+
+## Session Isolation
+
+### Per-Session Data Storage
+
+Store custom data per session in DynamoDB:
+
+```typescript
+// Store user preferences per session
+await sessions.updateSessionData(sessionId, {
+  userId: authUser.sub,
+  preferences: {
+    theme: 'dark',
+    notifications: true
+  }
+});
+
+// Retrieve session data
+const data = await sessions.getSessionData(sessionId);
+console.log('User ID:', data?.userId);
+```
+
+Source: `packages/core/src/session-provider.ts:165`
+
+### Session Lifecycle
+
+```typescript
+// Check if session exists
+const exists = await sessions.has(sessionId);
+
+// Delete session
+await sessions.delete(sessionId);
+
+// Get in-memory session count
+console.log('Active sessions:', sessions.size);
+```
+
+## Multi-Tenant Architecture
+
+### User-Scoped Authentication
+
+Combine authentication with session management for true multi-tenancy:
+
+```typescript
+import { Authenticated, AuthProvider } from '@leanmcp/auth';
+import { Tool } from '@leanmcp/core';
+
+const authProvider = new AuthProvider('auth0', {
+  domain: 'your-tenant.auth0.com',
+  clientId: 'your-client-id',
+  audience: 'your-api'
+});
+
+@Authenticated(authProvider)
+export class MultiTenantService {
+  @Tool({ description: 'Get user-specific data' })
+  async getUserData(args: { query: string }) {
+    // authUser.sub is the unique user ID
+    const userId = authUser.sub;
+    
+    // Fetch data scoped to this user
+    const data = await database.query({
+      userId: userId,
+      query: args.query
+    });
+    
+    return data;
+  }
+}
+```
+
+### Organization-Level Isolation
+
+```typescript
+@Tool({ description: 'List team members' })
+@Authenticated(authProvider)
+async listTeamMembers(args: any) {
+  // Get organization ID from user claims
+  const orgId = authUser.attributes['org_id'];
+  
+  // Query members for this organization only
+  const members = await database.getOrgMembers(orgId);
+  
+  return { members };
+}
+```
+
+## Session Store Implementations
+
+### In-Memory Store (Development)
+
+Default for local development - no external dependencies:
+
+```typescript
+import { InMemorySessionStore } from '@leanmcp/core';
+
+const sessions = new LeanMCPSessionProvider({
+  sessionStore: new InMemorySessionStore()
+});
+```
+
+Source: `packages/core/src/inmemory-session-store.ts:9`
+
+<Warning>
+In-memory sessions are lost when the process restarts. Use DynamoDB for production.
+</Warning>
+
+### DynamoDB Store (Production)
+
+Automatic for Lambda deployments, or force it for local testing:
+
+```typescript
+import { DynamoDBSessionStore, LeanMCPSessionProvider } from '@leanmcp/core';
+
+const sessions = new LeanMCPSessionProvider({
+  forceDynamoDB: true,
+  tableName: 'mcp-sessions',
+  region: 'us-east-1',
+  ttlSeconds: 86400, // 24 hours
+  logging: true
+});
+```
+
+**DynamoDB Table Schema:**
+```typescript
+interface SessionData {
+  sessionId: string;      // Partition key
+  createdAt: Date;
+  updatedAt: Date;
+  ttl?: number;           // TTL attribute for auto-cleanup
+  data?: Record<string, any>; // Custom session data
+}
+```
+
+Source: `packages/core/src/session-store.ts:4`
+
+### Custom Store Implementation
+
+Implement your own session store (Redis, PostgreSQL, etc.):
+
+```typescript
+import { ISessionStore, SessionData } from '@leanmcp/core';
+
+class RedisSessionStore implements ISessionStore {
+  async sessionExists(sessionId: string): Promise<boolean> {
+    return await redis.exists(`session:${sessionId}`);
+  }
+  
+  async createSession(sessionId: string, data?: Record<string, any>): Promise<void> {
+    await redis.setex(`session:${sessionId}`, 86400, JSON.stringify({
+      sessionId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      data
+    }));
+  }
+  
+  async getSession(sessionId: string): Promise<SessionData | null> {
+    const raw = await redis.get(`session:${sessionId}`);
+    return raw ? JSON.parse(raw) : null;
+  }
+  
+  async updateSession(sessionId: string, updates: Partial<SessionData>): Promise<void> {
+    const session = await this.getSession(sessionId);
+    if (!session) return;
+    
+    await redis.setex(`session:${sessionId}`, 86400, JSON.stringify({
+      ...session,
+      ...updates,
+      updatedAt: new Date()
+    }));
+  }
+  
+  async deleteSession(sessionId: string): Promise<void> {
+    await redis.del(`session:${sessionId}`);
+  }
+}
+
+const sessions = new LeanMCPSessionProvider({
+  sessionStore: new RedisSessionStore()
+});
+```
+
+## Lambda Cold Start Handling
+
+The session provider automatically handles Lambda container recycling:
+
+```typescript
+// getOrRecreate handles cold starts transparently
+const transport = await sessions.getOrRecreate(
+  sessionId,
+  () => createServer() // Fresh server for recycled container
+);
+```
+
+**What happens:**
+1. Check in-memory transports (fast path)
+2. Check DynamoDB if not in memory
+3. Recreate transport with existing session ID
+4. Set `_initialized` flag to bypass MCP SDK checks
+5. Connect to fresh server instance
+
+Source: `packages/core/src/session-provider.ts:113`
+
+<Note>
+This is critical for serverless deployments where Lambda containers are recycled between invocations.
+</Note>
+
+## Best Practices
+
+### 1. Always Use Session-Scoped Data
+
+```typescript
+// Good: Session-scoped
+@Tool({ description: 'Add to cart' })
+@Authenticated(authProvider)
+async addToCart(args: { itemId: string }) {
+  const userId = authUser.sub;
+  await database.addToCart(userId, args.itemId);
+}
+
+// Bad: Global state
+const globalCart = [];
+@Tool({ description: 'Add to cart' })
+async addToCart(args: { itemId: string }) {
+  globalCart.push(args.itemId); // Shared across all users!
+}
+```
+
+### 2. Store Tenant Context Early
+
+```typescript
+const handleRequest = async (request: Request) => {
+  const sessionId = extractSessionId(request);
+  
+  // Store tenant context on session creation
+  await sessions.updateSessionData(sessionId, {
+    tenantId: extractTenantId(request),
+    createdAt: new Date().toISOString()
+  });
+  
+  // ... handle request
+};
+```
+
+### 3. Cleanup Expired Sessions
+
+DynamoDB TTL handles automatic cleanup:
+
+```typescript
+const sessions = new LeanMCPSessionProvider({
+  ttlSeconds: 86400 // Auto-delete after 24 hours
+});
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="shield-halved" href="/features/authentication">
+    Secure your multi-tenant server
+  </Card>
+  <Card title="Env Injection" icon="key" href="/features/env-injection">
+    Per-user environment variables
+  </Card>
+</CardGroup>

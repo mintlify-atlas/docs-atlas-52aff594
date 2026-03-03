@@ -1,0 +1,499 @@
+---
+title: Observability
+description: Logging, monitoring, debugging, and production-ready features
+---
+
+LeanMCP provides comprehensive observability features for debugging during development and monitoring in production.
+
+## Logging
+
+### Logger Configuration
+
+The LeanMCP logger provides structured logging with multiple levels:
+
+```typescript
+import { Logger, LogLevel } from '@leanmcp/core';
+
+const logger = new Logger({
+  level: LogLevel.INFO,      // DEBUG | INFO | WARN | ERROR | NONE
+  prefix: 'MyService',       // Log prefix
+  timestamps: true,          // Include timestamps
+  colorize: true,           // ANSI colors (default: true)
+  context: 'module-name',   // Additional context
+  handlers: []              // Custom log handlers
+});
+
+logger.debug('Debug message');
+logger.info('Info message');
+logger.warn('Warning message');
+logger.error('Error message');
+```
+
+Source: `packages/core/src/logger.ts:60`
+
+### Log Levels
+
+```typescript
+enum LogLevel {
+  DEBUG = 0,   // Verbose debugging info
+  INFO = 1,    // General information
+  WARN = 2,    // Warning messages
+  ERROR = 3,   // Error messages
+  NONE = 4     // Disable logging
+}
+```
+
+Source: `packages/core/src/logger.ts:5`
+
+### Default Logger
+
+Use the pre-configured default logger:
+
+```typescript
+import { defaultLogger } from '@leanmcp/core';
+
+defaultLogger.info('Server started');
+defaultLogger.warn('High memory usage');
+defaultLogger.error('Failed to connect', error);
+```
+
+Source: `packages/core/src/logger.ts:149`
+
+### Log Formatting
+
+Logs are automatically formatted with:
+- **Timestamp**: ISO 8601 format
+- **Prefix**: Custom prefix (e.g., `[MyService]`)
+- **Context**: Module or component name
+- **Level**: Log level label
+- **Colors**: ANSI color codes (can be disabled)
+
+**Example output:**
+```
+[2026-03-03T10:30:45.123Z][LeanMCP][auth][INFO] User authenticated: user@example.com
+```
+
+Source: `packages/core/src/logger.ts:78`
+
+## Custom Log Handlers
+
+Integrate with third-party services (PostHog, Sentry, Datadog, etc.):
+
+```typescript
+import { Logger, LogPayload } from '@leanmcp/core';
+
+// PostHog handler
+const posthogHandler = (payload: LogPayload) => {
+  if (payload.level >= LogLevel.WARN) {
+    posthog.capture('log_event', {
+      level: payload.levelLabel,
+      message: payload.message,
+      context: payload.context,
+      timestamp: payload.timestamp
+    });
+  }
+};
+
+// Sentry handler
+const sentryHandler = (payload: LogPayload) => {
+  if (payload.level === LogLevel.ERROR) {
+    Sentry.captureMessage(payload.message, {
+      level: 'error',
+      extra: {
+        args: payload.args,
+        context: payload.context
+      }
+    });
+  }
+};
+
+const logger = new Logger({
+  level: LogLevel.INFO,
+  handlers: [posthogHandler, sentryHandler]
+});
+```
+
+Source: `packages/core/src/logger.ts:42`
+
+### Log Payload Structure
+
+```typescript
+interface LogPayload {
+  level: LogLevel;          // Numeric log level
+  levelLabel: string;       // 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
+  message: string;          // Log message
+  args: any[];             // Additional arguments
+  prefix?: string;         // Logger prefix
+  context?: string;        // Context/module name
+  timestamp: string;       // ISO 8601 timestamp
+}
+```
+
+Source: `packages/core/src/logger.ts:32`
+
+## Session Monitoring
+
+### Session Lifecycle Logging
+
+Monitor session creation, restoration, and deletion:
+
+```typescript
+import { LeanMCPSessionProvider } from '@leanmcp/core';
+
+const sessions = new LeanMCPSessionProvider({
+  logging: true // Enable session logging
+});
+
+// Logs will show:
+// - Session provider type (in-memory vs DynamoDB)
+// - Session creation events
+// - Session restoration after Lambda cold starts
+// - Session deletion events
+```
+
+Source: `packages/core/src/session-provider.ts:53`
+
+### Track Active Sessions
+
+Monitor the number of active sessions:
+
+```typescript
+const sessions = new LeanMCPSessionProvider();
+
+// Get session count
+console.log('Active sessions:', sessions.size);
+
+// List all session IDs
+for (const sessionId of sessions.keys()) {
+  console.log('Session:', sessionId);
+}
+
+// Check if using DynamoDB
+if (sessions.usingDynamoDB) {
+  console.log('Using persistent session storage');
+}
+```
+
+Source: `packages/core/src/session-provider.ts:180`
+
+## Authentication Debugging
+
+### Token Verification Errors
+
+Detailed error messages for authentication failures:
+
+```typescript
+import { AuthenticationError } from '@leanmcp/auth';
+
+try {
+  await authenticatedMethod();
+} catch (error) {
+  if (error instanceof AuthenticationError) {
+    switch (error.code) {
+      case 'MISSING_TOKEN':
+        console.error('No token provided');
+        break;
+      case 'INVALID_TOKEN':
+        console.error('Token is invalid or expired');
+        break;
+      case 'VERIFICATION_FAILED':
+        console.error('Token verification failed:', error.message);
+        break;
+    }
+  }
+}
+```
+
+Source: `packages/auth/src/decorators.ts:52`
+
+### Auth Provider Logging
+
+Log authentication events:
+
+```typescript
+const authProvider = new AuthProvider('auth0', {
+  domain: 'example.auth0.com',
+  clientId: 'client-id',
+  audience: 'api'
+});
+
+@Authenticated(authProvider, { getUser: true })
+async myTool(args: any) {
+  // Log authenticated user
+  console.log('Authenticated user:', {
+    id: authUser.sub,
+    email: authUser.email,
+    verified: authUser.email_verified
+  });
+}
+```
+
+## Elicitation Debugging
+
+### Log Elicitation Requests
+
+Debug form elicitation flows:
+
+```typescript
+import { ElicitationError } from '@leanmcp/elicitation';
+
+try {
+  const result = await elicitationMethod(args);
+} catch (error) {
+  if (error instanceof ElicitationError) {
+    console.error('Elicitation error:', {
+      code: error.code,
+      message: error.message,
+      details: error.details
+    });
+  }
+}
+```
+
+Source: `packages/elicitation/src/types.ts:116`
+
+## Environment Variable Debugging
+
+### Log Available Variables
+
+Check which environment variables are available:
+
+```typescript
+import { getAllEnv, hasEnvContext } from '@leanmcp/env-injection';
+
+@Authenticated(authProvider, { projectId: 'my-project' })
+export class DebugService {
+  @Tool({ description: 'Debug env vars' })
+  async debugEnv() {
+    if (hasEnvContext()) {
+      const allEnv = getAllEnv();
+      console.log('Available env vars:', Object.keys(allEnv));
+      console.log('Total count:', Object.keys(allEnv).length);
+    } else {
+      console.log('No env context available');
+    }
+  }
+}
+```
+
+Source: `packages/env-injection/src/env-context.ts:60`
+
+## Production Monitoring
+
+### Health Checks
+
+Implement health check endpoints:
+
+```typescript
+import { LeanMCPSessionProvider } from '@leanmcp/core';
+
+const sessions = new LeanMCPSessionProvider();
+
+app.get('/health', async (req, res) => {
+  const health = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    sessions: {
+      active: sessions.size,
+      storage: sessions.usingDynamoDB ? 'dynamodb' : 'memory'
+    },
+    memory: process.memoryUsage()
+  };
+  
+  res.json(health);
+});
+```
+
+### Metrics Collection
+
+Collect custom metrics:
+
+```typescript
+import { Logger, LogLevel } from '@leanmcp/core';
+
+const metricsHandler = (payload: LogPayload) => {
+  // Send metrics to CloudWatch, Datadog, etc.
+  metrics.increment('logs_total', {
+    level: payload.levelLabel,
+    context: payload.context
+  });
+};
+
+const logger = new Logger({
+  level: LogLevel.INFO,
+  handlers: [metricsHandler]
+});
+```
+
+### Error Tracking
+
+Integrate with Sentry or similar:
+
+```typescript
+import * as Sentry from '@sentry/node';
+import { Logger, LogLevel } from '@leanmcp/core';
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV
+});
+
+const sentryHandler = (payload: LogPayload) => {
+  if (payload.level === LogLevel.ERROR) {
+    Sentry.captureMessage(payload.message, {
+      level: 'error',
+      extra: {
+        context: payload.context,
+        args: payload.args
+      }
+    });
+  }
+};
+
+const logger = new Logger({
+  handlers: [sentryHandler]
+});
+
+// Catch unhandled errors
+process.on('unhandledRejection', (error) => {
+  logger.error('Unhandled rejection', error);
+  Sentry.captureException(error);
+});
+```
+
+## Performance Monitoring
+
+### Request Timing
+
+Log request duration:
+
+```typescript
+import { Logger } from '@leanmcp/core';
+
+const logger = new Logger({ prefix: 'Performance' });
+
+const handleRequest = async (request: Request) => {
+  const start = Date.now();
+  
+  try {
+    const response = await processRequest(request);
+    const duration = Date.now() - start;
+    logger.info(`Request completed in ${duration}ms`);
+    return response;
+  } catch (error) {
+    const duration = Date.now() - start;
+    logger.error(`Request failed after ${duration}ms`, error);
+    throw error;
+  }
+};
+```
+
+### Session Operations
+
+Monitor session operation performance:
+
+```typescript
+const getOrCreateSession = async (sessionId: string) => {
+  const start = Date.now();
+  
+  const transport = await sessions.getOrRecreate(
+    sessionId,
+    () => createServer()
+  );
+  
+  const duration = Date.now() - start;
+  logger.info(`Session operation completed in ${duration}ms`, {
+    sessionId,
+    created: !transport,
+    storage: sessions.usingDynamoDB ? 'dynamodb' : 'memory'
+  });
+  
+  return transport;
+};
+```
+
+## Best Practices
+
+### 1. Use Appropriate Log Levels
+
+```typescript
+// DEBUG: Detailed debugging info
+logger.debug('Processing request', { args, meta });
+
+// INFO: General information
+logger.info('User authenticated', { userId: authUser.sub });
+
+// WARN: Something unexpected but not critical
+logger.warn('High session count', { count: sessions.size });
+
+// ERROR: Critical errors
+logger.error('Database connection failed', error);
+```
+
+### 2. Structured Logging
+
+Use objects for structured data:
+
+```typescript
+// Good: Structured
+logger.info('Tool executed', {
+  tool: 'sendMessage',
+  userId: authUser.sub,
+  duration: 123
+});
+
+// Bad: String concatenation
+logger.info('Tool sendMessage executed by ' + authUser.sub + ' in 123ms');
+```
+
+### 3. Disable Colors in Production
+
+```typescript
+const logger = new Logger({
+  level: LogLevel.INFO,
+  colorize: process.env.NODE_ENV !== 'production'
+});
+```
+
+### 4. Use Context for Module Identification
+
+```typescript
+const authLogger = new Logger({ context: 'auth' });
+const dbLogger = new Logger({ context: 'database' });
+const sessionLogger = new Logger({ context: 'session' });
+
+authLogger.info('User logged in');
+// [2026-03-03T10:30:45.123Z][auth][INFO] User logged in
+
+dbLogger.warn('Slow query detected');
+// [2026-03-03T10:30:45.123Z][database][WARN] Slow query detected
+```
+
+### 5. Handle Logger Errors Gracefully
+
+The logger catches handler errors to prevent logging from breaking your app:
+
+```typescript
+const flakyHandler = (payload: LogPayload) => {
+  throw new Error('Handler error'); // Won't crash the app
+};
+
+const logger = new Logger({
+  handlers: [flakyHandler]
+});
+
+logger.info('This works'); // Logs normally, handler error is caught
+```
+
+Source: `packages/core/src/logger.ts:114`
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deployment" icon="rocket" href="/guides/deployment">
+    Deploy to production
+  </Card>
+  <Card title="Authentication" icon="shield-halved" href="/features/authentication">
+    Secure your MCP server
+  </Card>
+</CardGroup>

@@ -1,0 +1,469 @@
+---
+title: 'Prompts'
+description: 'Learn how to create reusable prompt templates with the @Prompt decorator'
+---
+
+# Prompts
+
+Prompts are reusable templates for LLM interactions. They help you generate consistent, context-aware prompts for AI agents.
+
+## The @Prompt Decorator
+
+The `@Prompt` decorator marks a method as an MCP prompt template with automatic name inference.
+
+### Basic Usage
+
+```typescript
+import { Prompt } from '@leanmcp/core';
+
+export class GreetingService {
+  @Prompt({ description: 'Generate a greeting prompt' })
+  greetingPrompt(args: { name?: string }) {
+    return {
+      messages: [{
+        role: 'user',
+        content: { 
+          type: 'text', 
+          text: `Say hello to ${args.name || 'there'}!` 
+        }
+      }]
+    };
+  }
+}
+```
+
+**Key Points:**
+- Prompt name is automatically derived from method name (`greetingPrompt`)
+- Input schema can be explicitly defined via `inputClass` or inferred from parameter type
+- Returns message array following MCP prompt format
+
+## Prompt Definition
+
+### Type Signature
+
+From `packages/core/src/decorators.ts:122-141`:
+
+```typescript
+export interface PromptOptions {
+  description?: string;
+  inputClass?: any; // Optional: Explicit input class for schema generation
+}
+
+export function Prompt(options: PromptOptions = {}): MethodDecorator
+```
+
+### Options
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `description` | `string` | No | Human-readable description of the prompt's purpose |
+| `inputClass` | `Class` | No | Class defining input schema (can be inferred from parameter type) |
+
+## Message Format
+
+### Standard Message Structure
+
+Prompts must return an object with a `messages` array following the MCP specification:
+
+```typescript
+interface PromptMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: {
+    type: 'text' | 'image' | 'resource';
+    text?: string;
+    data?: string;
+    mimeType?: string;
+  };
+}
+
+interface PromptResult {
+  messages: PromptMessage[];
+  description?: string;
+}
+```
+
+### Text Messages
+
+```typescript
+@Prompt({ description: 'Generate a code review prompt' })
+codeReviewPrompt(args: { code: string; language: string }) {
+  return {
+    messages: [
+      {
+        role: 'system',
+        content: {
+          type: 'text',
+          text: 'You are an expert code reviewer.'
+        }
+      },
+      {
+        role: 'user',
+        content: {
+          type: 'text',
+          text: `Review this ${args.language} code:\n\n${args.code}`
+        }
+      }
+    ]
+  };
+}
+```
+
+### Multi-Turn Conversations
+
+```typescript
+@Prompt({ description: 'Generate a debugging conversation' })
+debuggingPrompt(args: { error: string; context: string }) {
+  return {
+    messages: [
+      {
+        role: 'system',
+        content: {
+          type: 'text',
+          text: 'You are a debugging assistant.'
+        }
+      },
+      {
+        role: 'user',
+        content: {
+          type: 'text',
+          text: `I'm getting this error: ${args.error}`
+        }
+      },
+      {
+        role: 'assistant',
+        content: {
+          type: 'text',
+          text: 'I can help debug that. Can you provide more context?'
+        }
+      },
+      {
+        role: 'user',
+        content: {
+          type: 'text',
+          text: args.context
+        }
+      }
+    ]
+  };
+}
+```
+
+## Prompt Templates
+
+### Input Schema Definition
+
+Define input classes for type-safe prompt parameters:
+
+```typescript
+class ComposeMessagePromptInput {
+  @SchemaConstraint({ description: 'Purpose of the message' })
+  purpose!: string;
+
+  @Optional()
+  @SchemaConstraint({ description: 'Tone (professional, casual, formal)' })
+  tone?: string;
+
+  @Optional()
+  @SchemaConstraint({ description: 'Additional context' })
+  context?: string;
+}
+
+@Prompt({ 
+  description: 'Generate a professional message template',
+  inputClass: ComposeMessagePromptInput
+})
+composeMessagePrompt(args: ComposeMessagePromptInput) {
+  const tone = args.tone || 'professional';
+  const context = args.context ? `\n\nContext: ${args.context}` : '';
+  
+  return {
+    messages: [{
+      role: 'user',
+      content: {
+        type: 'text',
+        text: `Compose a ${tone} message for: ${args.purpose}${context}`
+      }
+    }]
+  };
+}
+```
+
+## Real-World Examples
+
+### Slack Message Composer
+
+From `examples/slack-with-auth/mcp/slack/index.ts:454-473`:
+
+```typescript
+class ComposeMessagePromptInput {
+  @SchemaConstraint({ description: 'Purpose of the message' })
+  purpose!: string;
+
+  @Optional()
+  @SchemaConstraint({ description: 'Tone of the message' })
+  tone?: string;
+
+  @Optional()
+  @SchemaConstraint({ description: 'Additional context' })
+  context?: string;
+}
+
+@Prompt({ 
+  description: 'Generate a professional Slack message template',
+  inputClass: ComposeMessagePromptInput
+})
+composeMessagePrompt(args: ComposeMessagePromptInput) {
+  const tone = args.tone || 'professional';
+  const context = args.context || '';
+  
+  return {
+    messages: [{
+      role: 'user',
+      content: {
+        type: 'text',
+        text: `Compose a ${tone} Slack message for: ${args.purpose}${
+          context ? `\n\nContext: ${context}` : ''
+        }\n\nThe message should be clear, concise, and appropriate for workplace communication.`
+      }
+    }]
+  };
+}
+```
+
+### Channel Description Generator
+
+From `examples/slack-with-auth/mcp/slack/index.ts:479-495`:
+
+```typescript
+class ChannelDescriptionPromptInput {
+  @SchemaConstraint({ description: 'Name of the channel' })
+  channelName!: string;
+
+  @SchemaConstraint({ description: 'Purpose of the channel' })
+  channelPurpose!: string;
+}
+
+@Prompt({ 
+  description: 'Generate a clear Slack channel description',
+  inputClass: ChannelDescriptionPromptInput
+})
+channelDescriptionPrompt(args: ChannelDescriptionPromptInput) {
+  return {
+    messages: [{
+      role: 'user',
+      content: {
+        type: 'text',
+        text: `Create a concise channel description for "${args.channelName}" 
+        with purpose: ${args.channelPurpose}\n\n
+        The description should be 1-2 sentences.`
+      }
+    }]
+  };
+}
+```
+
+### Code Generation Prompt
+
+```typescript
+class CodeGenPromptInput {
+  @SchemaConstraint({ description: 'Programming language' })
+  language!: string;
+
+  @SchemaConstraint({ description: 'Task description' })
+  task!: string;
+
+  @Optional()
+  @SchemaConstraint({ description: 'Code style preferences' })
+  style?: string;
+}
+
+@Prompt({ 
+  description: 'Generate code based on task description',
+  inputClass: CodeGenPromptInput
+})
+codeGenerationPrompt(args: CodeGenPromptInput) {
+  const styleNote = args.style ? `\nStyle: ${args.style}` : '';
+  
+  return {
+    messages: [
+      {
+        role: 'system',
+        content: {
+          type: 'text',
+          text: `You are an expert ${args.language} programmer.`
+        }
+      },
+      {
+        role: 'user',
+        content: {
+          type: 'text',
+          text: `Task: ${args.task}${styleNote}\n\nProvide clean, well-documented code.`
+        }
+      }
+    ]
+  };
+}
+```
+
+## Advanced Patterns
+
+### Dynamic System Prompts
+
+```typescript
+@Prompt({ description: 'Sentiment analysis with custom parameters' })
+sentimentPrompt(args: { text: string; targetAudience?: string }) {
+  const audience = args.targetAudience || 'general audience';
+  
+  return {
+    messages: [
+      {
+        role: 'system',
+        content: {
+          type: 'text',
+          text: `Analyze sentiment considering ${audience} perspective.`
+        }
+      },
+      {
+        role: 'user',
+        content: {
+          type: 'text',
+          text: args.text
+        }
+      }
+    ]
+  };
+}
+```
+
+### Contextual Prompts
+
+```typescript
+@Prompt({ description: 'Generate contextual help prompt' })
+helpPrompt(args: { feature: string; userLevel: 'beginner' | 'advanced' }) {
+  const complexity = args.userLevel === 'beginner' 
+    ? 'simple, step-by-step instructions'
+    : 'detailed technical explanation';
+  
+  return {
+    messages: [{
+      role: 'user',
+      content: {
+        type: 'text',
+        text: `Explain ${args.feature} using ${complexity}.`
+      }
+    }]
+  };
+}
+```
+
+<Tabs>
+  <Tab title="Type Inference">
+    The `@Prompt` decorator supports automatic type inference:
+
+    ```typescript
+    // Explicit inputClass (recommended)
+    @Prompt({ 
+      description: 'Generate prompt',
+      inputClass: PromptInput 
+    })
+    myPrompt(args: PromptInput) { /* ... */ }
+
+    // Inferred from parameter type
+    @Prompt({ description: 'Generate prompt' })
+    myPrompt(args: PromptInput) { /* ... */ }
+    ```
+
+    From `packages/core/src/decorators.ts:131-139`, the decorator will:
+    1. Use explicit `inputClass` if provided
+    2. Fall back to parameter type inference using `reflect-metadata`
+  </Tab>
+  <Tab title="Role Best Practices">
+    **System Role:**
+    - Set context and behavior expectations
+    - Define the AI's persona or expertise
+    - Establish guidelines and constraints
+
+    **User Role:**
+    - Represent user queries and requests
+    - Provide context and requirements
+    - Ask questions or give instructions
+
+    **Assistant Role:**
+    - Show example responses (few-shot learning)
+    - Guide conversation flow
+    - Demonstrate desired output format
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<Note>
+**Prompt Engineering Tips:**
+- Be specific and clear in your instructions
+- Provide examples of desired output format
+- Use system messages to set consistent behavior
+- Include relevant context from input parameters
+- Keep prompts focused on a single task
+</Note>
+
+### Template Reusability
+
+```typescript
+export class PromptService {
+  // Base prompt template
+  private baseInstruction(tone: string) {
+    return `You are a ${tone} communication assistant.`;
+  }
+
+  @Prompt({ description: 'Professional email prompt' })
+  emailPrompt(args: { purpose: string }) {
+    return {
+      messages: [
+        {
+          role: 'system',
+          content: { type: 'text', text: this.baseInstruction('professional') }
+        },
+        {
+          role: 'user',
+          content: { type: 'text', text: `Write an email about: ${args.purpose}` }
+        }
+      ]
+    };
+  }
+
+  @Prompt({ description: 'Casual message prompt' })
+  messagePrompt(args: { purpose: string }) {
+    return {
+      messages: [
+        {
+          role: 'system',
+          content: { type: 'text', text: this.baseInstruction('friendly') }
+        },
+        {
+          role: 'user',
+          content: { type: 'text', text: `Write a message about: ${args.purpose}` }
+        }
+      ]
+    };
+  }
+}
+```
+
+<Warning>
+Prompt names are automatically derived from method names using `String(propertyKey)`. Choose descriptive names that clearly indicate the prompt's purpose.
+</Warning>
+
+## Prompts vs Tools
+
+| Feature | Prompts | Tools |
+|---------|---------|-------|
+| Purpose | Generate LLM interaction templates | Execute actions and return results |
+| Return Value | Message array | Arbitrary data |
+| Side Effects | None (template only) | Can modify state, call APIs |
+| Use Case | Guide AI conversations | Perform operations |
+
+## Next Steps
+
+- Learn about [Tools](/concepts/tools) for callable functions
+- Explore [Resources](/concepts/resources) for data endpoints
+- See [Schema Validation](/concepts/schema-validation) for input constraints

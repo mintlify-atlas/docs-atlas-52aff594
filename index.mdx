@@ -1,97 +1,122 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: Introduction
+description: Production-ready infrastructure for building and deploying scalable MCP servers with full backend capabilities
 ---
 
-## Setting up
+<img
+  src="https://raw.githubusercontent.com/LeanMCP/leanmcp-sdk/refs/heads/main/assets/Logo-trans.png"
+  alt="LeanMCP Logo"
+  width="500"
+/>
 
-Get your documentation site up and running in minutes.
+# LeanMCP SDK
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+**Production-Ready Infrastructure for MCP Servers**
 
-## Make it yours
+Build and deploy scalable MCP servers with full backend capabilities. LeanMCP provides everything you need to create production-grade Model Context Protocol servers with authentication, multi-tenant isolation, observability, and more.
 
-Design a docs site that looks great and empowers your users.
+## Production-Grade Support
 
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="shield-halved" href="/features/authentication">
+    Built-in auth support with AWS Cognito, Auth0, Clerk, and custom providers
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Multi-Tenant Isolation" icon="users" href="/features/multi-tenancy">
+    Request-scoped secrets and environment injection for secure multi-tenancy
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Request Logging" icon="list" href="/features/observability">
+    Comprehensive request and response logging for debugging and monitoring
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Observability" icon="chart-line" href="/features/observability">
+    Built-in monitoring and tracing at https://app.leanmcp.com
   </Card>
-</Columns>
+  <Card title="Private Cloud" icon="cloud" href="/guides/deployment">
+    Deploy to your own infrastructure with enterprise support
+  </Card>
+  <Card title="Type-Safe Schema" icon="code" href="/concepts/tools">
+    Class-based schema validation with TypeScript decorators
+  </Card>
+</CardGroup>
 
-## Create beautiful pages
+## Ideal For
 
-Everything you need to create world-class documentation.
+<CardGroup cols={3}>
+  <Card title="Agent Platforms" icon="robot">
+    Build intelligent agent systems with structured tool calling
+  </Card>
+  <Card title="Customer-Facing AI" icon="comment">
+    Deploy AI-powered workflows directly to customers
+  </Card>
+  <Card title="Multi-Tenant SaaS" icon="building">
+    Create secure, isolated AI systems for multiple tenants
+  </Card>
+</CardGroup>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Why LeanMCP?
 
-## Need inspiration?
+LeanMCP is a TypeScript SDK that extends the Model Context Protocol with production-ready features. Unlike basic MCP implementations, LeanMCP provides:
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+- **Type-Safe Development** - TypeScript decorators with full IntelliSense support
+- **Class-Based Schemas** - Define input/output validation using TypeScript classes
+- **Auto-Discovery** - Automatically register services from your project structure
+- **Production Features** - Authentication, logging, monitoring out of the box
+- **Easy Deployment** - Built-in CLI for scaffolding and deployment
+
+## Quick Example
+
+```typescript
+import { Tool, SchemaConstraint } from "@leanmcp/core";
+
+class AnalyzeSentimentInput {
+  @SchemaConstraint({
+    description: 'Text to analyze',
+    minLength: 1
+  })
+  text!: string;
+}
+
+export class SentimentService {
+  @Tool({ 
+    description: 'Analyze sentiment of text',
+    inputClass: AnalyzeSentimentInput
+  })
+  async analyzeSentiment(args: AnalyzeSentimentInput) {
+    // Your implementation here
+    return {
+      sentiment: 'positive',
+      score: 0.8,
+      confidence: 0.9
+    };
+  }
+}
+```
+
+## Get Started
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Create your first MCP server in minutes
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Detailed installation and setup guide
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/concepts/tools">
+    Learn about tools, prompts, and resources
+  </Card>
+  <Card title="Examples" icon="code" href="/examples/weather-service">
+    Explore example implementations
+  </Card>
+</CardGroup>
+
+## Links
+
+- **Documentation**: https://docs.leanmcp.com
+- **Build & Deploy**: https://ship.leanmcp.com
+- **Observability Platform**: https://app.leanmcp.com
+- **npm Packages**: https://www.npmjs.com/search?q=%40leanmcp
+- **GitHub**: https://github.com/LeanMCP
+- **Discord Community**: https://discord.com/invite/DsRcA3GwPy
+
+<Note>
+  LeanMCP is built on the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) specification, ensuring compatibility with MCP-compatible clients and tools.
+</Note>

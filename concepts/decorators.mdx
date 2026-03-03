@@ -1,0 +1,490 @@
+---
+title: 'Decorators Overview'
+description: 'Complete reference for all LeanMCP decorators'
+---
+
+# Decorators Overview
+
+LeanMCP uses TypeScript decorators to define MCP capabilities with full type safety and automatic metadata generation.
+
+## Core MCP Decorators
+
+These decorators define the primary MCP protocol features:
+
+### @Tool
+
+Marks a method as a callable MCP tool (function).
+
+```typescript
+@Tool({ 
+  description: 'Calculate sum of two numbers',
+  inputClass: AddInput
+})
+async add(args: AddInput): Promise<{ result: number }> {
+  return { result: args.a + args.b };
+}
+```
+
+**Options:**
+- `description?: string` - Tool description
+- `inputClass?: Class` - Input schema class
+- `securitySchemes?: SecurityScheme[]` - Auth requirements
+
+[Learn more about Tools →](/concepts/tools)
+
+### @Prompt
+
+Marks a method as a reusable prompt template.
+
+```typescript
+@Prompt({ description: 'Generate greeting message' })
+greetingPrompt(args: { name?: string }) {
+  return {
+    messages: [{
+      role: 'user',
+      content: { type: 'text', text: `Hello ${args.name}!` }
+    }]
+  };
+}
+```
+
+**Options:**
+- `description?: string` - Prompt description
+- `inputClass?: Class` - Input schema class (optional, can be inferred)
+
+[Learn more about Prompts →](/concepts/prompts)
+
+### @Resource
+
+Marks a method as a data endpoint (resource).
+
+```typescript
+@Resource({ description: 'Service statistics' })
+getStats() {
+  return { uptime: process.uptime(), requestCount: 1523 };
+}
+```
+
+**Options:**
+- `description?: string` - Resource description
+- `mimeType?: string` - Content type (default: `'application/json'`)
+- `inputClass?: Class` - Input schema class
+- `uri?: string` - Custom URI (default: auto-generated)
+
+[Learn more about Resources →](/concepts/resources)
+
+## Schema Decorators
+
+These decorators define input/output validation schemas:
+
+### @SchemaConstraint
+
+Adds JSON Schema validation constraints to a property.
+
+```typescript
+class UserInput {
+  @SchemaConstraint({
+    description: 'User email address',
+    format: 'email',
+    minLength: 5
+  })
+  email!: string;
+
+  @SchemaConstraint({
+    description: 'User age',
+    minimum: 18,
+    maximum: 120
+  })
+  age!: number;
+}
+```
+
+**Available Constraints:**
+
+<Tabs>
+  <Tab title="String">
+    - `minLength?: number` - Minimum string length
+    - `maxLength?: number` - Maximum string length
+    - `pattern?: string` - Regex pattern (e.g., `'^[a-z]+$'`)
+    - `format?: string` - Format hint (e.g., `'email'`, `'uri'`, `'date-time'`)
+    - `enum?: string[]` - Allowed values
+    - `description?: string` - Field description
+    - `default?: string` - Default value
+  </Tab>
+  <Tab title="Number">
+    - `minimum?: number` - Minimum value (inclusive)
+    - `maximum?: number` - Maximum value (inclusive)
+    - `exclusiveMinimum?: number` - Minimum value (exclusive)
+    - `exclusiveMaximum?: number` - Maximum value (exclusive)
+    - `multipleOf?: number` - Value must be multiple of this
+    - `description?: string` - Field description
+    - `default?: number` - Default value
+  </Tab>
+  <Tab title="Array">
+    - `minItems?: number` - Minimum array length
+    - `maxItems?: number` - Maximum array length
+    - `uniqueItems?: boolean` - Items must be unique
+    - `items?: object` - Schema for array items
+    - `description?: string` - Field description
+  </Tab>
+  <Tab title="Common">
+    - `description?: string` - Human-readable description
+    - `default?: any` - Default value if not provided
+    - `type?: string` - Explicit type override
+    - `enum?: any[]` - List of allowed values
+  </Tab>
+</Tabs>
+
+[Learn more about Schema Validation →](/concepts/schema-validation)
+
+### @Optional
+
+Marks a property as optional in the JSON Schema.
+
+```typescript
+class SearchInput {
+  @SchemaConstraint({ description: 'Search query' })
+  query!: string;
+
+  @Optional()
+  @SchemaConstraint({ description: 'Result limit', default: 10 })
+  limit?: number;
+}
+```
+
+<Note>
+Without `@Optional()`, properties are marked as required in the generated JSON Schema.
+</Note>
+
+## Authentication Decorators
+
+These decorators add authentication and authorization:
+
+### @Auth
+
+Adds authentication requirements to a class or method.
+
+```typescript
+// Class-level (all methods require auth)
+@Auth({ provider: 'clerk' })
+export class SecureService {
+  @Tool({ description: 'Protected operation' })
+  async protectedTool() { /* ... */ }
+}
+
+// Method-level (specific method requires auth)
+export class MixedService {
+  @Tool({ description: 'Public operation' })
+  async publicTool() { /* ... */ }
+
+  @Tool({ description: 'Premium feature' })
+  @Auth({ provider: 'stripe' })
+  async premiumTool() { /* ... */ }
+}
+```
+
+**Options:**
+- `provider: string` - Auth provider name (e.g., `'clerk'`, `'auth0'`, `'cognito'`)
+
+### @Authenticated
+
+From `@leanmcp/auth` - enforces authentication via middleware:
+
+```typescript
+import { Authenticated } from '@leanmcp/auth';
+
+@Authenticated(authProvider)
+export class SlackService {
+  @Tool({ description: 'Send message', inputClass: SendMessageInput })
+  async sendMessage(args: SendMessageInput) {
+    // Automatically authenticated
+  }
+}
+```
+
+See [Authentication Guide](/guides/authentication) for setup details.
+
+## UI & Rendering Decorators
+
+These decorators control UI presentation:
+
+### @UI
+
+Links a UI component to a tool or resource.
+
+```typescript
+@UI('DashboardComponent')
+export class DashboardService {
+  @Tool({ description: 'Open dashboard' })
+  async openDashboard() { /* ... */ }
+}
+```
+
+### @Render
+
+Specifies output rendering format.
+
+```typescript
+@Tool({ description: 'Generate report' })
+@Render('markdown')
+async generateReport() {
+  return '# Report\n\nData: ...';
+}
+```
+
+**Supported Formats:**
+- `'markdown'` - Markdown text
+- `'html'` - HTML content
+- `'json'` - JSON data
+- `'chart'` - Chart visualization
+- `'table'` - Tabular data
+
+### @GPTApp
+
+From `@leanmcp/ui` - creates interactive UI experiences:
+
+```typescript
+import { GPTApp } from '@leanmcp/ui/server';
+
+@Tool({ description: 'Open interactive dashboard' })
+@GPTApp({
+  component: './DashboardComponent',
+  title: 'Social Monitor'
+})
+async openDashboard(input: DashboardInput) {
+  return { status: 'ready' };
+}
+```
+
+See [UI Components Guide](/guides/ui-components) for details.
+
+## Environment & Configuration Decorators
+
+### @UserEnvs
+
+Injects environment variables or user-level configuration.
+
+```typescript
+export class APIService {
+  @UserEnvs()
+  private userConfig!: Record<string, string>;
+
+  @Tool({ description: 'Call API' })
+  async callAPI() {
+    const apiKey = this.userConfig['API_KEY'];
+    // Use per-user configuration
+  }
+}
+```
+
+See [Environment Injection Guide](/guides/environment-injection) for usage.
+
+## Workflow Decorators
+
+### @Deprecated
+
+Marks a tool, prompt, or resource as deprecated.
+
+```typescript
+@Tool({ description: 'Old API method' })
+@Deprecated('Use newMethod() instead')
+async oldMethod() {
+  // Logs warning when called
+}
+```
+
+**Features:**
+- Automatically logs deprecation warning
+- Can be applied to classes or methods
+- Optional custom message
+
+## Security Decorators
+
+From MCP authorization specification:
+
+### Security Schemes
+
+Define authentication requirements in `@Tool` decorator:
+
+```typescript
+@Tool({
+  description: 'Fetch private data',
+  securitySchemes: [{ type: 'oauth2', scopes: ['read:user'] }]
+})
+async fetchPrivateData() { /* ... */ }
+
+@Tool({
+  description: 'Public endpoint',
+  securitySchemes: [{ type: 'noauth' }]
+})
+async publicEndpoint() { /* ... */ }
+```
+
+**Security Scheme Types:**
+
+From `packages/core/src/decorators.ts:19-24`:
+
+```typescript
+export interface SecurityScheme {
+  type: 'noauth' | 'oauth2';
+  scopes?: string[]; // OAuth scopes (for oauth2 type)
+}
+```
+
+## Decorator Metadata
+
+### Reading Metadata
+
+LeanMCP provides helpers to read decorator metadata:
+
+```typescript
+import { getMethodMetadata, getDecoratedMethods } from '@leanmcp/core';
+
+// Get metadata for a specific method
+const metadata = getMethodMetadata(MyService.prototype.myTool);
+console.log(metadata.toolName); // 'myTool'
+console.log(metadata.toolDescription); // Tool description
+
+// Get all tools in a class
+const tools = getDecoratedMethods(MyService, 'tool:name');
+tools.forEach(({ method, propertyKey, metadata }) => {
+  console.log(`Tool: ${propertyKey}`);
+});
+```
+
+### Metadata Keys
+
+From `packages/core/src/decorators.ts:325-350`:
+
+**Tool Metadata:**
+- `'tool:name'` - Tool name
+- `'tool:description'` - Tool description
+- `'tool:inputClass'` - Input schema class
+- `'tool:securitySchemes'` - Security requirements
+
+**Prompt Metadata:**
+- `'prompt:name'` - Prompt name
+- `'prompt:description'` - Prompt description
+- `'prompt:inputClass'` - Input schema class
+
+**Resource Metadata:**
+- `'resource:uri'` - Resource URI
+- `'resource:name'` - Resource name
+- `'resource:description'` - Resource description
+- `'resource:mimeType'` - MIME type
+
+## Complete Example
+
+Here's a service using multiple decorators:
+
+```typescript
+import { 
+  Tool, 
+  Prompt, 
+  Resource, 
+  SchemaConstraint, 
+  Optional,
+  Auth,
+  Render
+} from '@leanmcp/core';
+
+// Input schemas
+class AnalyzeInput {
+  @SchemaConstraint({ description: 'Text to analyze', minLength: 1 })
+  text!: string;
+
+  @Optional()
+  @SchemaConstraint({ 
+    description: 'Language',
+    enum: ['en', 'es', 'fr'],
+    default: 'en'
+  })
+  language?: string;
+}
+
+// Service with mixed auth
+@Auth({ provider: 'clerk' })
+export class AnalysisService {
+  // Tool with schema validation
+  @Tool({ 
+    description: 'Analyze text sentiment',
+    inputClass: AnalyzeInput
+  })
+  @Render('json')
+  async analyze(args: AnalyzeInput) {
+    return {
+      sentiment: 'positive',
+      score: 0.85
+    };
+  }
+
+  // Prompt template
+  @Prompt({ description: 'Generate analysis prompt' })
+  analysisPrompt(args: { text: string }) {
+    return {
+      messages: [{
+        role: 'user',
+        content: { type: 'text', text: `Analyze: ${args.text}` }
+      }]
+    };
+  }
+
+  // Resource endpoint
+  @Resource({ description: 'Supported languages' })
+  getLanguages() {
+    return {
+      languages: ['en', 'es', 'fr'],
+      default: 'en'
+    };
+  }
+
+  // Deprecated method
+  @Tool({ description: 'Old analysis method' })
+  @Deprecated('Use analyze() instead')
+  async oldAnalyze() {
+    // Legacy implementation
+  }
+}
+```
+
+## Best Practices
+
+<Note>
+**Decorator Guidelines:**
+- Use clear, descriptive method names (they become tool/prompt/resource names)
+- Always include `description` in decorator options
+- Define explicit `inputClass` for complex schemas
+- Apply `@Optional()` to all optional properties
+- Use `@Auth` at class level when all methods need authentication
+- Combine decorators logically (`@Tool` + `@Render`, `@Tool` + `@Auth`)
+</Note>
+
+<Warning>
+Decorators are evaluated at module load time. Don't use runtime-dependent logic in decorator arguments.
+</Warning>
+
+## Decorator Ordering
+
+When using multiple decorators, order matters:
+
+```typescript
+// Correct order (specific to general)
+@Tool({ description: 'Process data' })
+@Auth({ provider: 'clerk' })
+@Render('json')
+@Deprecated('Use v2 API')
+async processData() { /* ... */ }
+```
+
+**General Rule:**
+1. Primary decorator (`@Tool`, `@Prompt`, `@Resource`)
+2. Authentication (`@Auth`, `@Authenticated`)
+3. UI/Rendering (`@Render`, `@UI`, `@GPTApp`)
+4. Lifecycle (`@Deprecated`)
+
+## Next Steps
+
+- [Tools](/concepts/tools) - Deep dive into callable functions
+- [Prompts](/concepts/prompts) - Master prompt templates
+- [Resources](/concepts/resources) - Expose data endpoints
+- [Schema Validation](/concepts/schema-validation) - Advanced validation patterns

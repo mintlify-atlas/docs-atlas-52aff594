@@ -1,122 +1,160 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "LeanMCP SDK",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#3178c6",
+    "light": "#60a5fa",
+    "dark": "#1e40af"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/leanmcp/leanmcp-sdk"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/leanmcp/leanmcp-sdk",
+      "discord": "https://discord.com/invite/DsRcA3GwPy",
+      "x": "https://x.com/LeanMcp"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
               "index",
               "quickstart",
-              "development"
+              "installation"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/tools",
+              "concepts/prompts",
+              "concepts/resources",
+              "concepts/decorators",
+              "concepts/schema-validation"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "CLI",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "cli/overview",
+              "cli/create",
+              "cli/add-service",
+              "cli/dev-commands"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Features",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "features/authentication",
+              "features/multi-tenancy",
+              "features/elicitation",
+              "features/env-injection",
+              "features/observability"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/creating-services",
+              "guides/auth-integration",
+              "guides/schema-design",
+              "guides/error-handling",
+              "guides/deployment"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Core Package",
             "pages": [
-              "api-reference/introduction"
+              "api/core/mcp-server",
+              "api/core/create-http-server",
+              "api/core/decorators",
+              "api/core/schema-generator",
+              "api/core/session-store"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "CLI Package",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/cli/commands",
+              "api/cli/configuration"
+            ]
+          },
+          {
+            "group": "Auth Package",
+            "pages": [
+              "api/auth/auth-provider",
+              "api/auth/authenticated-decorator",
+              "api/auth/providers"
+            ]
+          },
+          {
+            "group": "Elicitation Package",
+            "pages": [
+              "api/elicitation/elicit-function",
+              "api/elicitation/form-types"
+            ]
+          },
+          {
+            "group": "UI Package",
+            "pages": [
+              "api/ui/components",
+              "api/ui/ui-app-decorator"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/utils/env-injection",
+              "api/utils/helpers"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Examples",
+        "groups": [
+          {
+            "group": "Basic Examples",
+            "pages": [
+              "examples/sentiment-analysis",
+              "examples/weather-service",
+              "examples/calculator"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "examples/auth0-integration",
+              "examples/clerk-integration",
+              "examples/cognito-integration"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "examples/slack-integration",
+              "examples/github-roast",
+              "examples/social-monitor",
+              "examples/ui-components"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

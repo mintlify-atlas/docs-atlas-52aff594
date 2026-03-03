@@ -1,0 +1,316 @@
+---
+title: createHTTPServer
+description: Create an HTTP server for MCP with Streamable HTTP transport
+---
+
+The `createHTTPServer` function creates an Express-based HTTP server that exposes your MCP server over HTTP. It supports both stateless (Lambda/serverless) and stateful (long-running) modes.
+
+## Function Signature
+
+```typescript
+async function createHTTPServer(
+  serverInput: HTTPServerInput,
+  options?: HTTPServerOptions
+): Promise<{ listener: http.Server; port: number }>
+```
+
+## Parameters
+
+<ParamField path="serverInput" type="MCPServerConstructorOptions | MCPServerFactory" required>
+  Either server constructor options or a factory function that returns a Server instance.
+
+  **Recommended**: Use `MCPServerConstructorOptions` for simplified API.
+
+  **Legacy**: Use `MCPServerFactory` for advanced custom server creation.
+</ParamField>
+
+<ParamField path="options" type="HTTPServerOptions">
+  HTTP server configuration (only used with legacy factory pattern)
+
+  <Expandable title="HTTPServerOptions">
+    <ParamField path="port" type="number" default="3001">
+      Port number for the HTTP server. If unavailable, will retry up to 20 ports.
+    </ParamField>
+
+    <ParamField path="cors" type="boolean | { origin?: string | string[]; credentials?: boolean }">
+      CORS configuration:
+      - `true`: Permissive defaults (`origin: '*'`, `credentials: false`)
+      - `false`: CORS disabled
+      - Object: Custom CORS settings
+    </ParamField>
+
+    <ParamField path="logging" type="boolean" default="false">
+      Enable HTTP request logging
+    </ParamField>
+
+    <ParamField path="logger" type="Logger">
+      Custom logger instance
+    </ParamField>
+
+    <ParamField path="sessionTimeout" type="number">
+      Session timeout in milliseconds (stateful mode only)
+    </ParamField>
+
+    <ParamField path="stateless" type="boolean" default="true">
+      Enable stateless mode for Lambda/serverless deployments
+    </ParamField>
+
+    <ParamField path="dashboard" type="boolean" default="true">
+      Serve dashboard UI at `/` and `/mcp` GET endpoints
+    </ParamField>
+
+    <ParamField path="auth" type="HTTPServerAuthOptions">
+      OAuth/Auth configuration (MCP authorization spec)
+    </ParamField>
+
+    <ParamField path="sessionStore" type="ISessionStore">
+      Session store for stateful mode (enables session persistence)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Return Value
+
+<ResponseField name="listener" type="http.Server">
+  The Node.js HTTP server instance. Keep this reference to prevent process exit.
+</ResponseField>
+
+<ResponseField name="port" type="number">
+  The actual port the server is listening on (may differ from requested port).
+</ResponseField>
+
+## Examples
+
+### Basic Usage (Recommended)
+
+```typescript
+import { createHTTPServer } from '@leanmcp/core';
+
+const { listener, port } = await createHTTPServer({
+  name: 'my-mcp-server',
+  version: '1.0.0',
+  port: 3001,
+  cors: true,
+  logging: true,
+});
+
+console.log(`Server running on http://localhost:${port}`);
+```
+
+### With CORS Configuration
+
+```typescript
+await createHTTPServer({
+  name: 'my-mcp-server',
+  version: '1.0.0',
+  port: 3001,
+  cors: {
+    origin: ['https://example.com', 'https://app.example.com'],
+    credentials: true,
+  },
+});
+```
+
+### Stateful Mode with Session Store
+
+```typescript
+import { createHTTPServer, DynamoDBSessionStore } from '@leanmcp/core';
+
+await createHTTPServer({
+  name: 'my-mcp-server',
+  version: '1.0.0',
+  stateless: false,
+  sessionStore: new DynamoDBSessionStore({
+    tableName: 'my-sessions',
+    ttlSeconds: 3600,
+  }),
+});
+```
+
+### With OAuth/Auth (MCP Authorization Spec)
+
+```typescript
+await createHTTPServer({
+  name: 'my-mcp-server',
+  version: '1.0.0',
+  auth: {
+    resource: 'https://api.example.com',
+    authorizationServers: ['https://auth.example.com'],
+    scopesSupported: ['read:data', 'write:data'],
+    documentationUrl: 'https://docs.example.com/auth',
+    enableOAuthServer: true,
+    oauthServerOptions: {
+      sessionSecret: process.env.SESSION_SECRET!,
+      tokenTTL: 3600,
+      enableDCR: true,
+      upstreamProvider: {
+        id: 'github',
+        authorizationEndpoint: 'https://github.com/login/oauth/authorize',
+        tokenEndpoint: 'https://github.com/login/oauth/access_token',
+        clientId: process.env.GITHUB_CLIENT_ID!,
+        clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+        scopes: ['read:user'],
+      },
+    },
+  },
+});
+```
+
+### Legacy Factory Pattern
+
+```typescript
+import { createHTTPServer, MCPServer } from '@leanmcp/core';
+
+await createHTTPServer(
+  async () => {
+    const server = new MCPServer({
+      name: 'my-mcp-server',
+      version: '1.0.0',
+    });
+    // Custom initialization
+    return server.getServer();
+  },
+  {
+    port: 3001,
+    cors: true,
+  }
+);
+```
+
+## Endpoints
+
+The HTTP server exposes the following endpoints:
+
+### MCP Protocol Endpoint
+
+**POST /mcp**
+
+Main MCP protocol endpoint for tool/prompt/resource requests.
+
+**Headers:**
+- `Content-Type: application/json`
+- `mcp-session-id: <session-id>` (stateful mode only)
+- `Authorization: Bearer <token>` (if auth enabled)
+
+**Request Body:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "getCurrentTime",
+    "arguments": {}
+  },
+  "id": 1
+}
+```
+
+### Dashboard UI
+
+**GET /**
+
+Serves the interactive MCP dashboard UI (if `dashboard: true`).
+
+**GET /mcp**
+
+Serves dashboard UI or handles SSE streaming (stateful mode).
+
+### Health Check
+
+**GET /health**
+
+Returns server health status.
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "mode": "stateless",
+  "activeSessions": 0,
+  "uptime": 123.45
+}
+```
+
+### OAuth Metadata (if auth enabled)
+
+**GET /.well-known/oauth-protected-resource**
+
+RFC 9728: Protected Resource Metadata
+
+**GET /.well-known/oauth-authorization-server**
+
+RFC 8414: Authorization Server Metadata (if `enableOAuthServer: true`)
+
+## Stateless vs Stateful Mode
+
+### Stateless Mode (Default)
+
+Optimized for Lambda/serverless deployments:
+
+- Fresh server instance per request
+- No session IDs in headers
+- No session persistence
+- Automatic cleanup after each request
+- DELETE /mcp returns 405 Method Not Allowed
+
+```typescript
+await createHTTPServer({
+  name: 'my-server',
+  version: '1.0.0',
+  stateless: true, // Default
+});
+```
+
+### Stateful Mode
+
+Long-running servers with session support:
+
+- Single server instance
+- Session IDs in `mcp-session-id` header
+- Session persistence with optional backend store
+- SSE support for streaming
+- DELETE /mcp for session cleanup
+
+```typescript
+await createHTTPServer({
+  name: 'my-server',
+  version: '1.0.0',
+  stateless: false,
+});
+```
+
+## Port Selection
+
+If the requested port is unavailable, the server will automatically try the next port (up to 20 attempts):
+
+```typescript
+const { listener, port } = await createHTTPServer({
+  name: 'my-server',
+  version: '1.0.0',
+  port: 3001, // May use 3002, 3003, etc. if 3001 is taken
+});
+
+console.log(`Server running on port ${port}`);
+```
+
+## Graceful Shutdown
+
+The server automatically handles SIGINT and SIGTERM signals:
+
+```typescript
+const { listener } = await createHTTPServer({
+  name: 'my-server',
+  version: '1.0.0',
+});
+
+// Press Ctrl+C to trigger graceful shutdown
+// - Closes all MCP transports
+// - Closes HTTP server
+// - Releases port
+```
+
+## Related
+
+- [MCPServer](/api/core/mcp-server) - Core server class
+- [Session Stores](/api/core/session-store) - Session persistence backends
+- [HTTPServerAuthOptions](/api/core/create-http-server#oauth-auth-configuration) - OAuth configuration

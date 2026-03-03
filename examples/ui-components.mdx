@@ -1,0 +1,749 @@
+---
+title: 'MCP UI Components Guide'
+description: 'Complete reference for building interactive dashboards with @leanmcp/ui'
+icon: 'palette'
+---
+
+Build rich, interactive MCP dashboards using React and the `@leanmcp/ui` component library.
+
+## Overview
+
+The `@leanmcp/ui` package provides battle-tested React components for:
+- **Data Grids** - Display and interact with tool results
+- **Forms** - Input collection with validation
+- **Buttons** - Trigger MCP tools with loading states
+- **State Management** - Persistent widget state across calls
+- **Connection Management** - Handle MCP connection lifecycle
+
+## Installation
+
+```bash
+npm install @leanmcp/ui react react-dom
+```
+
+## Core Components
+
+### ToolDataGrid
+
+Display tabular data from MCP tools with sorting, filtering, and pagination.
+
+<Tabs>
+  <Tab title="Basic Usage">
+    ```tsx
+    import { ToolDataGrid } from '@leanmcp/ui';
+
+    interface Product {
+      id: string;
+      name: string;
+      price: number;
+      stock: number;
+      status: 'active' | 'draft';
+    }
+
+    export function ProductsTable() {
+      return (
+        <ToolDataGrid<Product>
+          dataTool="listProducts"
+          columns={[
+            { key: 'name', header: 'Product', sortable: true },
+            { key: 'price', header: 'Price', align: 'right', 
+              render: (v) => `$${Number(v).toFixed(2)}` },
+            { key: 'stock', header: 'Stock', align: 'right' },
+            { key: 'status', header: 'Status', 
+              render: (v) => (
+                <span className={`badge ${v === 'active' ? 'badge-success' : 'badge-gray'}`}>
+                  {v}
+                </span>
+              )}
+          ]}
+          transformData={(r) => ({
+            rows: r.products,
+            total: r.total
+          })}
+          pagination
+          defaultPageSize={10}
+          pageSizes={[5, 10, 25, 50]}
+          showRefresh
+          getRowKey={(row) => row.id}
+        />
+      );
+    }
+    ```
+  </Tab>
+
+  <Tab title="With Row Actions">
+    ```tsx
+    <ToolDataGrid<Product>
+      dataTool="listProducts"
+      columns={columns}
+      rowActions={[
+        {
+          label: 'Edit',
+          tool: 'updateProduct',
+          variant: 'default',
+          getArgs: (row) => ({ id: row.id }),
+          onSuccess: () => console.log('Updated!')
+        },
+        {
+          label: 'Delete',
+          tool: 'deleteProduct',
+          variant: 'destructive',
+          getArgs: (row) => ({ id: row.id }),
+          confirm: {
+            title: 'Delete product?',
+            description: 'This action cannot be undone.'
+          },
+          onSuccess: handleRefresh
+        }
+      ]}
+      transformData={(r) => ({
+        rows: r.products,
+        total: r.total
+      })}
+    />
+    ```
+  </Tab>
+
+  <Tab title="Auto-Refresh">
+    ```tsx
+    <ToolDataGrid
+      dataTool="getMessages"
+      toolArgs={{ channel: channelId, limit: 20 }}
+      columns={[
+        { key: 'ts', header: 'Time', width: '150px' },
+        { key: 'user', header: 'User', width: '150px' },
+        { key: 'text', header: 'Message', width: '500px' },
+      ]}
+      refreshInterval={10000} // Auto-refresh every 10s
+      dataPath="messages"
+    />
+    ```
+  </Tab>
+
+  <Tab title="Custom Cell Rendering">
+    ```tsx
+    const columns: ToolDataGridColumn<Product>[] = [
+      { key: 'name', header: 'Product', sortable: true },
+      { 
+        key: 'stock', 
+        header: 'Stock', 
+        align: 'right',
+        render: (value) => {
+          const n = Number(value);
+          const color = n === 0 ? 'text-red-500' : 
+                        n < 10 ? 'text-yellow-500' : 
+                        'text-green-500';
+          return <span className={color}>{n}</span>;
+        }
+      },
+      {
+        key: 'updatedAt',
+        header: 'Updated',
+        render: (value) => new Date(value).toLocaleDateString()
+      }
+    ];
+
+    <ToolDataGrid<Product>
+      dataTool="listProducts"
+      columns={columns}
+      transformData={(r) => ({ rows: r.products, total: r.total })}
+    />
+    ```
+  </Tab>
+</Tabs>
+
+### ToolForm
+
+Collect structured input for MCP tools with built-in validation.
+
+<Tabs>
+  <Tab title="Basic Form">
+    ```tsx
+    import { ToolForm, type ToolFormField } from '@leanmcp/ui';
+
+    export function CreateProductForm({ onSuccess }: { onSuccess: () => void }) {
+      const fields: ToolFormField[] = [
+        { 
+          name: 'name', 
+          label: 'Product Name', 
+          required: true,
+          placeholder: 'Enter product name'
+        },
+        { 
+          name: 'description', 
+          label: 'Description', 
+          type: 'textarea',
+          rows: 4
+        },
+        { 
+          name: 'price', 
+          label: 'Price ($)', 
+          type: 'number', 
+          required: true,
+          min: 0,
+          step: 0.01
+        },
+        {
+          name: 'category',
+          label: 'Category',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'Electronics', label: 'Electronics' },
+            { value: 'Accessories', label: 'Accessories' },
+            { value: 'Office', label: 'Office' },
+          ]
+        },
+        { 
+          name: 'stock', 
+          label: 'Initial Stock', 
+          type: 'number',
+          defaultValue: 0,
+          min: 0
+        },
+      ];
+
+      return (
+        <ToolForm
+          toolName="createProduct"
+          fields={fields}
+          submitText="Create Product"
+          showSuccessToast
+          successMessage={(r) => `Created: ${r.product.name}`}
+          resetOnSuccess
+          onSuccess={onSuccess}
+        />
+      );
+    }
+    ```
+  </Tab>
+
+  <Tab title="With Custom Validation">
+    ```tsx
+    const fields: ToolFormField[] = [
+      { 
+        name: 'email',
+        label: 'Email',
+        type: 'email',
+        required: true,
+        validate: (value) => {
+          if (!value.includes('@')) return 'Invalid email';
+          if (value.endsWith('.test')) return 'Test emails not allowed';
+          return true;
+        }
+      },
+      {
+        name: 'password',
+        label: 'Password',
+        type: 'password',
+        required: true,
+        validate: (value) => {
+          if (value.length < 8) return 'Password must be at least 8 characters';
+          if (!/[A-Z]/.test(value)) return 'Must contain uppercase letter';
+          if (!/[0-9]/.test(value)) return 'Must contain number';
+          return true;
+        }
+      },
+      {
+        name: 'confirmPassword',
+        label: 'Confirm Password',
+        type: 'password',
+        required: true,
+        validate: (value, formData) => {
+          if (value !== formData.password) return 'Passwords must match';
+          return true;
+        }
+      }
+    ];
+    ```
+  </Tab>
+
+  <Tab title="Conditional Fields">
+    ```tsx
+    const fields: ToolFormField[] = [
+      {
+        name: 'hasDiscount',
+        label: 'Apply Discount',
+        type: 'checkbox',
+        defaultValue: false
+      },
+      {
+        name: 'discountPercent',
+        label: 'Discount %',
+        type: 'number',
+        min: 0,
+        max: 100,
+        // Only show if hasDiscount is true
+        condition: (formData) => formData.hasDiscount === true
+      },
+      {
+        name: 'discountCode',
+        label: 'Discount Code',
+        type: 'text',
+        condition: (formData) => formData.hasDiscount === true
+      }
+    ];
+    ```
+  </Tab>
+</Tabs>
+
+### ToolButton
+
+Trigger MCP tools with automatic loading states and error handling.
+
+```tsx
+import { ToolButton } from '@leanmcp/ui';
+
+<ToolButton
+  tool="refreshData"
+  args={{ force: true }}
+  resultDisplay="toast"
+  successMessage="Data refreshed!"
+  variant="outline"
+  onSuccess={() => console.log('Done!')}
+>
+  Refresh
+</ToolButton>
+
+<ToolButton
+  tool="deleteAccount"
+  args={{ userId: user.id }}
+  variant="destructive"
+  confirm={{
+    title: 'Delete account?',
+    description: 'This action cannot be undone.',
+    confirmText: 'Delete',
+    cancelText: 'Cancel'
+  }}
+  onSuccess={handleAccountDeleted}
+>
+  Delete Account
+</ToolButton>
+
+<ToolButton
+  tool="exportData"
+  args={{ format: 'csv' }}
+  resultDisplay="download"
+  downloadFilename="export.csv"
+>
+  Export CSV
+</ToolButton>
+```
+
+### useTool Hook
+
+Manually call MCP tools with full control over execution.
+
+```tsx
+import { useTool } from '@leanmcp/ui';
+
+function MyComponent() {
+  const { call, result, loading, error, reset } = useTool<
+    { query: string }, // Input type
+    { results: any[] }  // Output type
+  >('searchItems');
+
+  const handleSearch = async (query: string) => {
+    reset(); // Clear previous results
+    const data = await call({ query });
+    if (data) {
+      console.log('Found:', data.results.length);
+    }
+  };
+
+  return (
+    <div>
+      <button onClick={() => handleSearch('laptop')} disabled={loading}>
+        {loading ? 'Searching...' : 'Search'}
+      </button>
+
+      {error && <div className="error">{error.message}</div>}
+
+      {result && (
+        <div>
+          <p>Found {result.results.length} items</p>
+          <ul>
+            {result.results.map((item, i) => (
+              <li key={i}>{item.name}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+### useGptTool Hook
+
+Call tools with GPT-specific result parsing.
+
+```tsx
+import { useGptTool } from '@leanmcp/ui';
+
+function Dashboard() {
+  const { call: fetchProfile } = useGptTool('fetchGitHubProfile');
+  const { call: fetchRepos } = useGptTool('fetchGitHubRepos');
+  const { call: generateRoast, loading } = useGptTool('generateRoast');
+
+  const handleRoast = async () => {
+    const profileResult = await fetchProfile({});
+    const reposResult = await fetchRepos({});
+
+    const roastResult = await generateRoast({
+      profile: profileResult.profile,
+      repos: reposResult.repos
+    });
+
+    console.log(roastResult.roast);
+  };
+
+  return (
+    <button onClick={handleRoast} disabled={loading}>
+      {loading ? 'Generating...' : 'Roast Me'}
+    </button>
+  );
+}
+```
+
+### useWidgetState Hook
+
+Persist state across tool calls (survives component remounts).
+
+```tsx
+import { useWidgetState } from '@leanmcp/ui';
+
+interface DashboardState {
+  activeTab: string;
+  filters: { status: string; category: string };
+  sortBy: string;
+}
+
+function Dashboard() {
+  const [state, setState] = useWidgetState<DashboardState>({
+    activeTab: 'all',
+    filters: { status: 'active', category: 'all' },
+    sortBy: 'name'
+  });
+
+  // State persists when user switches tabs and comes back
+  const handleTabChange = (tab: string) => {
+    setState(prev => ({ ...prev, activeTab: tab }));
+  };
+
+  const handleFilterChange = (key: string, value: string) => {
+    setState(prev => ({
+      ...prev,
+      filters: { ...prev.filters, [key]: value }
+    }));
+  };
+
+  return (
+    <div>
+      <Tabs activeTab={state.activeTab} onChange={handleTabChange} />
+      <Filters filters={state.filters} onChange={handleFilterChange} />
+      <ProductGrid filters={state.filters} sortBy={state.sortBy} />
+    </div>
+  );
+}
+```
+
+### RequireConnection
+
+Handle connection lifecycle with loading and error states.
+
+```tsx
+import { RequireConnection } from '@leanmcp/ui';
+
+export function MyDashboard() {
+  return (
+    <RequireConnection 
+      loading={<LoadingSpinner />}
+      error={<ErrorMessage />}
+    >
+      <DashboardContent />
+    </RequireConnection>
+  );
+}
+```
+
+### useGptApp Hook
+
+Access GPT app connection status and metadata.
+
+```tsx
+import { useGptApp } from '@leanmcp/ui';
+
+function Dashboard() {
+  const { isConnected, serverName, error } = useGptApp();
+
+  if (!isConnected) {
+    return <div>Connecting to {serverName}...</div>;
+  }
+
+  if (error) {
+    return <div>Connection error: {error.message}</div>;
+  }
+
+  return <div>Connected to {serverName}</div>;
+}
+```
+
+### useToolOutput Hook
+
+Access the initial tool output that opened the dashboard.
+
+```tsx
+import { useToolOutput } from '@leanmcp/ui';
+
+export function Dashboard() {
+  const toolOutput = useToolOutput<{
+    initialTab: string;
+    config: { apiKey: string };
+  }>();
+
+  // Use initial data from the tool that opened this dashboard
+  const initialTab = toolOutput?.initialTab || 'default';
+  const apiKey = toolOutput?.config.apiKey;
+
+  return (
+    <div>
+      <p>Starting on tab: {initialTab}</p>
+      <p>API configured: {apiKey ? 'Yes' : 'No'}</p>
+    </div>
+  );
+}
+```
+
+## Complete Example: Products Dashboard
+
+Here's a full working example combining all components:
+
+```tsx mcp/products/ProductsDashboard.tsx
+import React, { useState } from 'react';
+import {
+  ToolDataGrid,
+  ToolButton,
+  ToolForm,
+  RequireConnection,
+  type ToolFormField,
+  type ToolDataGridColumn
+} from '@leanmcp/ui';
+
+interface Product {
+  id: string;
+  name: string;
+  price: number;
+  category: string;
+  stock: number;
+  status: 'active' | 'draft';
+}
+
+export function ProductsDashboard() {
+  return (
+    <RequireConnection loading={<div>Loading...</div>}>
+      <DashboardContent />
+    </RequireConnection>
+  );
+}
+
+function DashboardContent() {
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const handleRefresh = () => setRefreshKey(k => k + 1);
+
+  const columns: ToolDataGridColumn<Product>[] = [
+    { key: 'name', header: 'Product', sortable: true },
+    { key: 'category', header: 'Category', sortable: true },
+    { key: 'price', header: 'Price', align: 'right', 
+      render: (v) => `$${Number(v).toFixed(2)}` },
+    {
+      key: 'stock',
+      header: 'Stock',
+      align: 'right',
+      render: (v) => {
+        const n = Number(v);
+        const color = n === 0 ? 'text-red-500' : 
+                      n < 10 ? 'text-yellow-500' : 
+                      'text-green-500';
+        return <span className={color}>{n}</span>;
+      }
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (v) => (
+        <span className={`badge ${v === 'active' ? 'badge-success' : 'badge-gray'}`}>
+          {v}
+        </span>
+      )
+    },
+  ];
+
+  const formFields: ToolFormField[] = [
+    { name: 'name', label: 'Product Name', required: true },
+    { name: 'description', label: 'Description', type: 'textarea' },
+    { name: 'price', label: 'Price ($)', type: 'number', required: true, min: 0 },
+    {
+      name: 'category',
+      label: 'Category',
+      type: 'select',
+      required: true,
+      options: [
+        { value: 'Electronics', label: 'Electronics' },
+        { value: 'Accessories', label: 'Accessories' },
+        { value: 'Office', label: 'Office' },
+      ]
+    },
+    { name: 'stock', label: 'Stock', type: 'number', min: 0, defaultValue: 0 },
+  ];
+
+  return (
+    <div className="p-6">
+      <header className="mb-6 flex justify-between items-center">
+        <h1 className="text-2xl font-bold">Product Dashboard</h1>
+        <div className="flex gap-2">
+          <ToolButton tool="getStats" resultDisplay="toast" variant="outline">
+            Refresh Stats
+          </ToolButton>
+          <button
+            onClick={() => setShowCreateForm(!showCreateForm)}
+            className="btn btn-primary"
+          >
+            {showCreateForm ? 'Cancel' : '+ Add Product'}
+          </button>
+        </div>
+      </header>
+
+      {showCreateForm && (
+        <div className="bg-white rounded-lg border p-6 mb-6">
+          <h2 className="text-lg font-semibold mb-4">Create Product</h2>
+          <ToolForm
+            toolName="createProduct"
+            fields={formFields}
+            submitText="Create"
+            showSuccessToast
+            successMessage={(r) => `Created: ${r.product.name}`}
+            resetOnSuccess
+            onSuccess={() => {
+              setShowCreateForm(false);
+              handleRefresh();
+            }}
+          />
+        </div>
+      )}
+
+      <div className="bg-white rounded-lg border overflow-hidden">
+        <ToolDataGrid<Product>
+          key={refreshKey}
+          dataTool="listProducts"
+          columns={columns}
+          transformData={(r) => ({
+            rows: r.products,
+            total: r.total
+          })}
+          rowActions={[
+            {
+              label: 'Delete',
+              tool: 'deleteProduct',
+              variant: 'destructive',
+              getArgs: (row) => ({ id: row.id }),
+              confirm: {
+                title: 'Delete product?',
+                description: 'This cannot be undone.'
+              },
+              onSuccess: handleRefresh
+            }
+          ]}
+          pagination
+          defaultPageSize={10}
+          pageSizes={[5, 10, 25]}
+          showRefresh
+          getRowKey={(row) => row.id}
+        />
+      </div>
+    </div>
+  );
+}
+
+export default ProductsDashboard;
+```
+
+## Styling
+
+`@leanmcp/ui` components use Tailwind CSS by default. Customize by:
+
+1. **Override classes**:
+```tsx
+<ToolButton className="bg-blue-600 hover:bg-blue-700" />
+```
+
+2. **Use theme context**:
+```tsx
+import { useHostContext } from '@leanmcp/ui';
+
+function MyComponent() {
+  const { theme } = useHostContext();
+  return <div className={theme === 'dark' ? 'dark-mode' : 'light-mode'} />;
+}
+```
+
+3. **Custom CSS**:
+```css
+.my-grid .tool-data-grid-header {
+  background: #f0f0f0;
+  font-weight: bold;
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Type Safety" icon="shield-check">
+    - Use TypeScript interfaces for all data types
+    - Type `useTool` and `useGptTool` hooks
+    - Define column types with `ToolDataGridColumn<T>`
+  </Card>
+  
+  <Card title="Performance" icon="gauge-high">
+    - Use `getRowKey` for efficient re-renders
+    - Implement pagination for large datasets
+    - Debounce search inputs
+    - Memoize expensive computations
+  </Card>
+  
+  <Card title="Error Handling" icon="triangle-exclamation">
+    - Always handle tool errors gracefully
+    - Show user-friendly error messages
+    - Provide retry mechanisms
+    - Log errors for debugging
+  </Card>
+  
+  <Card title="State Management" icon="database">
+    - Use `useWidgetState` for persistent data
+    - Reset forms after successful submission
+    - Clear stale data on tab changes
+    - Sync local state with tool results
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="GitHub Roast" href="/examples/github-roast" icon="github">
+    See OAuth and state management in action
+  </Card>
+  
+  <Card title="Social Monitor" href="/examples/social-monitor" icon="chart-line">
+    Multi-tab dashboard with AI responses
+  </Card>
+  
+  <Card title="Slack Integration" href="/examples/slack-integration" icon="slack">
+    Real-time message viewer components
+  </Card>
+  
+  <Card title="Component API" href="/api/ui/components" icon="code">
+    Full API reference for all components
+  </Card>
+</CardGroup>

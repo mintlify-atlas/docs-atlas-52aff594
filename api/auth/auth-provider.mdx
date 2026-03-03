@@ -1,0 +1,268 @@
+---
+title: 'AuthProvider'
+description: 'Main authentication provider class and interface'
+---
+
+## AuthProvider
+
+Unified authentication provider that dynamically selects the appropriate auth provider based on the provider parameter.
+
+### Constructor
+
+```typescript
+new AuthProvider(provider: string, config?: any)
+```
+
+<ParamField path="provider" type="string" required>
+  Authentication provider type. Supported values:
+  - `'cognito'` - AWS Cognito
+  - `'auth0'` - Auth0
+  - `'clerk'` - Clerk
+  - `'firebase'` - Firebase
+  - `'leanmcp'` - LeanMCP cloud (with user secrets support)
+</ParamField>
+
+<ParamField path="config" type="object">
+  Provider-specific configuration object (see provider-specific docs)
+</ParamField>
+
+### Methods
+
+#### init()
+
+Initialize the selected auth provider.
+
+```typescript
+await authProvider.init(config?: any): Promise<void>
+```
+
+<ParamField path="config" type="object">
+  Optional configuration to override constructor config
+</ParamField>
+
+#### verifyToken()
+
+Verify if a token is valid.
+
+```typescript
+await authProvider.verifyToken(token: string): Promise<boolean>
+```
+
+<ParamField path="token" type="string" required>
+  JWT token to verify
+</ParamField>
+
+<ResponseField name="result" type="boolean">
+  Returns `true` if token is valid, throws error otherwise
+</ResponseField>
+
+#### getUser()
+
+Get user information from a token.
+
+```typescript
+await authProvider.getUser(token: string): Promise<any>
+```
+
+<ParamField path="token" type="string" required>
+  JWT token to decode
+</ParamField>
+
+<ResponseField name="user" type="object">
+  User object with provider-specific fields. Common fields:
+  - `sub` - User ID
+  - `email` - Email address
+  - `email_verified` - Email verification status
+  - `attributes` - Full decoded token payload
+</ResponseField>
+
+#### refreshToken()
+
+Refresh an authentication token.
+
+```typescript
+await authProvider.refreshToken(refreshToken: string, username?: string): Promise<any>
+```
+
+<ParamField path="refreshToken" type="string" required>
+  Refresh token
+</ParamField>
+
+<ParamField path="username" type="string">
+  Username (required for Cognito)
+</ParamField>
+
+<ResponseField name="tokens" type="object">
+  New access token and optionally new refresh token
+</ResponseField>
+
+#### getUserSecrets()
+
+Get user secrets for a project (LeanMCP provider only).
+
+```typescript
+await authProvider.getUserSecrets(token: string, projectId: string): Promise<Record<string, string>>
+```
+
+<ParamField path="token" type="string" required>
+  JWT token
+</ParamField>
+
+<ParamField path="projectId" type="string" required>
+  Project ID to fetch secrets for
+</ParamField>
+
+<ResponseField name="secrets" type="Record<string, string>">
+  Object with user's environment variables. Returns empty object for non-LeanMCP providers.
+</ResponseField>
+
+#### getProviderType()
+
+Get the provider type.
+
+```typescript
+authProvider.getProviderType(): string
+```
+
+<ResponseField name="type" type="string">
+  Returns the provider type (e.g., 'cognito', 'auth0', 'clerk')
+</ResponseField>
+
+### Example Usage
+
+```typescript
+import { AuthProvider } from '@leanmcp/auth';
+
+// Initialize with Cognito
+const authProvider = new AuthProvider('cognito', {
+  region: 'us-east-1',
+  userPoolId: 'us-east-1_ABC123',
+  clientId: 'your-client-id',
+});
+
+await authProvider.init();
+
+// Verify token
+try {
+  await authProvider.verifyToken(token);
+  console.log('Token is valid');
+} catch (error) {
+  console.error('Invalid token:', error);
+}
+
+// Get user info
+const user = await authProvider.getUser(token);
+console.log('User:', user.email);
+```
+
+---
+
+## AuthProviderBase
+
+Abstract base class for implementing custom authentication providers.
+
+### Abstract Methods
+
+Extend this class and implement these methods:
+
+```typescript
+abstract class AuthProviderBase {
+  abstract init(config?: any): Promise<void>;
+  abstract refreshToken(refreshToken: string, username?: string): Promise<any>;
+  abstract verifyToken(token: string): Promise<boolean>;
+  abstract getUser(token: string): Promise<any>;
+}
+```
+
+### Custom Provider Example
+
+```typescript
+import { AuthProviderBase } from '@leanmcp/auth';
+
+export class CustomAuthProvider extends AuthProviderBase {
+  private apiKey: string = '';
+
+  async init(config?: { apiKey?: string }): Promise<void> {
+    this.apiKey = config?.apiKey || process.env.CUSTOM_API_KEY || '';
+    if (!this.apiKey) {
+      throw new Error('API key is required');
+    }
+  }
+
+  async verifyToken(token: string): Promise<boolean> {
+    // Implement your verification logic
+    const response = await fetch('https://your-api.com/verify', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.ok;
+  }
+
+  async getUser(token: string): Promise<any> {
+    // Implement your user fetching logic
+    const response = await fetch('https://your-api.com/user', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return await response.json();
+  }
+
+  async refreshToken(refreshToken: string): Promise<any> {
+    // Implement your refresh logic
+    const response = await fetch('https://your-api.com/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    return await response.json();
+  }
+}
+```
+
+## Error Handling
+
+### AuthenticationError
+
+All authentication errors are thrown as `AuthenticationError` instances:
+
+```typescript
+class AuthenticationError extends Error {
+  constructor(message: string, code: string);
+  code: string;
+}
+```
+
+#### Error Codes
+
+<ResponseField name="MISSING_TOKEN" type="string">
+  No token provided in request
+</ResponseField>
+
+<ResponseField name="INVALID_TOKEN" type="string">
+  Token is invalid or expired
+</ResponseField>
+
+<ResponseField name="VERIFICATION_FAILED" type="string">
+  Token verification failed (network error, etc.)
+</ResponseField>
+
+### Example Error Handling
+
+```typescript
+import { AuthenticationError } from '@leanmcp/auth';
+
+try {
+  await authProvider.verifyToken(token);
+} catch (error) {
+  if (error instanceof AuthenticationError) {
+    switch (error.code) {
+      case 'MISSING_TOKEN':
+        console.error('No token provided');
+        break;
+      case 'INVALID_TOKEN':
+        console.error('Token expired or invalid');
+        break;
+      case 'VERIFICATION_FAILED':
+        console.error('Verification error:', error.message);
+        break;
+    }
+  }
+}
+```

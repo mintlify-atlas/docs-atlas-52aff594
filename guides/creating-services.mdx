@@ -1,0 +1,467 @@
+---
+title: Creating Services
+description: Learn how to create MCP services with best practices and patterns
+icon: wrench
+---
+
+Learn how to create MCP services using LeanMCP's decorator-based approach with full type safety and automatic schema generation.
+
+## Service Basics
+
+Services in LeanMCP are TypeScript classes that expose tools, prompts, and resources through decorators. Each service is automatically discovered from the `./mcp` directory.
+
+### Creating Your First Service
+
+<Steps>
+  <Step title="Generate a new service">
+    Use the CLI to scaffold a new service:
+    
+    ```bash
+    npx @leanmcp/cli add sentiment
+    ```
+    
+    This creates `mcp/sentiment/index.ts` with boilerplate code.
+  </Step>
+  
+  <Step title="Define input schema">
+    Create a TypeScript class for input validation:
+    
+    ```typescript
+    import { SchemaConstraint, Optional } from "@leanmcp/core";
+    
+    class AnalyzeSentimentInput {
+      @SchemaConstraint({
+        description: 'Text to analyze',
+        minLength: 1
+      })
+      text!: string;
+      
+      @Optional()
+      @SchemaConstraint({
+        description: 'Language code',
+        enum: ['en', 'es', 'fr', 'de'],
+        default: 'en'
+      })
+      language?: string;
+    }
+    ```
+  </Step>
+  
+  <Step title="Define output schema">
+    Create a class for the output structure:
+    
+    ```typescript
+    class AnalyzeSentimentOutput {
+      @SchemaConstraint({
+        enum: ['positive', 'negative', 'neutral']
+      })
+      sentiment!: string;
+      
+      @SchemaConstraint({
+        minimum: -1,
+        maximum: 1
+      })
+      score!: number;
+      
+      @SchemaConstraint({
+        minimum: 0,
+        maximum: 1
+      })
+      confidence!: number;
+    }
+    ```
+  </Step>
+  
+  <Step title="Implement the service">
+    Create your service class with decorated methods:
+    
+    ```typescript
+    import { Tool } from "@leanmcp/core";
+    
+    export class SentimentService {
+      @Tool({ 
+        description: 'Analyze sentiment of text',
+        inputClass: AnalyzeSentimentInput
+      })
+      async analyzeSentiment(args: AnalyzeSentimentInput): Promise<AnalyzeSentimentOutput> {
+        const sentiment = this.detectSentiment(args.text);
+        
+        return {
+          sentiment: sentiment > 0 ? 'positive' : sentiment < 0 ? 'negative' : 'neutral',
+          score: sentiment,
+          confidence: Math.abs(sentiment)
+        };
+      }
+      
+      private detectSentiment(text: string): number {
+        // Your implementation here
+        const positiveWords = ['good', 'great', 'excellent', 'amazing'];
+        const negativeWords = ['bad', 'terrible', 'awful', 'horrible'];
+        
+        let score = 0;
+        const words = text.toLowerCase().split(/\s+/);
+        
+        words.forEach(word => {
+          if (positiveWords.includes(word)) score += 0.3;
+          if (negativeWords.includes(word)) score -= 0.3;
+        });
+        
+        return Math.max(-1, Math.min(1, score));
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Service Patterns
+
+### Multiple Tools in One Service
+
+Organize related functionality together:
+
+```typescript mcp/sentiment/index.ts
+export class SentimentService {
+  @Tool({ 
+    description: 'Analyze sentiment of text',
+    inputClass: AnalyzeSentimentInput
+  })
+  async analyzeSentiment(args: AnalyzeSentimentInput): Promise<AnalyzeSentimentOutput> {
+    // Implementation
+  }
+  
+  @Tool({ 
+    description: 'Get sentiment statistics'
+  })
+  async getSentimentStats(): Promise<{
+    totalAnalyses: number;
+    avgProcessingTime: number;
+    supportedLanguages: string[];
+  }> {
+    return {
+      totalAnalyses: 1000,
+      avgProcessingTime: 45,
+      supportedLanguages: ['en', 'es', 'fr', 'de']
+    };
+  }
+  
+  @Tool({ 
+    description: 'Get service information'
+  })
+  async getServiceInfo() {
+    return {
+      name: "Sentiment Analysis Service",
+      version: "1.0.0",
+      description: "Provides sentiment analysis for text"
+    };
+  }
+}
+```
+
+### Tools, Prompts, and Resources Together
+
+Combine different MCP primitives in one service:
+
+```typescript mcp/weather/index.ts
+import { Tool, Prompt, Resource } from "@leanmcp/core";
+
+export class WeatherService {
+  // Tool: Callable function
+  @Tool({ 
+    description: 'Get current weather for a city',
+    inputClass: WeatherInput
+  })
+  async getCurrentWeather(args: WeatherInput): Promise<WeatherOutput> {
+    return {
+      temperature: 72,
+      conditions: 'sunny',
+      humidity: 65
+    };
+  }
+
+  // Prompt: Template for LLM interactions
+  @Prompt({ description: 'Generate weather query prompt' })
+  weatherPrompt(args: { city?: string }) {
+    return {
+      messages: [{
+        role: 'user',
+        content: {
+          type: 'text',
+          text: `What's the weather forecast for ${args.city || 'the city'}?`
+        }
+      }]
+    };
+  }
+
+  // Resource: Data endpoint
+  @Resource({ 
+    description: 'Supported cities list',
+    mimeType: 'application/json'
+  })
+  getSupportedCities() {
+    return {
+      cities: ['New York', 'London', 'Tokyo', 'Paris', 'Sydney'],
+      count: 5
+    };
+  }
+}
+```
+
+## Best Practices
+
+### 1. Use Descriptive Names
+
+Choose clear, action-oriented names for tools:
+
+```typescript
+// Good
+@Tool({ description: 'Analyze sentiment of text' })
+async analyzeSentiment(args: AnalyzeSentimentInput) { }
+
+// Bad - vague
+@Tool({ description: 'Process data' })
+async process(args: any) { }
+```
+
+### 2. Validate Input Thoroughly
+
+Use `@SchemaConstraint` to enforce data quality:
+
+```typescript
+class UserInput {
+  @SchemaConstraint({
+    description: 'User email address',
+    format: 'email',
+    minLength: 5,
+    maxLength: 100
+  })
+  email!: string;
+
+  @SchemaConstraint({
+    description: 'User age',
+    minimum: 18,
+    maximum: 120
+  })
+  age!: number;
+
+  @SchemaConstraint({
+    description: 'User role',
+    enum: ['admin', 'user', 'guest'],
+    default: 'user'
+  })
+  role!: string;
+}
+```
+
+### 3. Keep Services Focused
+
+Each service should have a single responsibility:
+
+```typescript
+// Good - focused on one domain
+export class PaymentService {
+  @Tool({ description: 'Process payment' })
+  async processPayment(args: PaymentInput) { }
+  
+  @Tool({ description: 'Get payment status' })
+  async getPaymentStatus(args: { paymentId: string }) { }
+}
+
+// Bad - mixing concerns
+export class MixedService {
+  async processPayment() { }
+  async sendEmail() { }
+  async analyzeText() { }
+}
+```
+
+### 4. Use Shared Configuration
+
+Create a `config.ts` for shared dependencies:
+
+```typescript mcp/config.ts
+import { AuthProvider } from "@leanmcp/auth";
+
+if (!process.env.AUTH0_DOMAIN) {
+  throw new Error('Missing AUTH0_DOMAIN environment variable');
+}
+
+export const authProvider = new AuthProvider('auth0', {
+  domain: process.env.AUTH0_DOMAIN,
+  clientId: process.env.AUTH0_CLIENT_ID!,
+  audience: process.env.AUTH0_AUDIENCE!
+});
+
+await authProvider.init();
+```
+
+Then import in your services:
+
+```typescript mcp/slack/index.ts
+import { authProvider } from '../config.js';
+import { Authenticated } from '@leanmcp/auth';
+
+@Authenticated(authProvider)
+export class SlackService {
+  // All methods are protected
+}
+```
+
+### 5. Handle Errors Gracefully
+
+Provide clear error messages:
+
+```typescript
+@Tool({ description: 'Divide two numbers', inputClass: DivideInput })
+async divide(input: DivideInput) {
+  if (input.b === 0) {
+    throw new Error('Division by zero is not allowed');
+  }
+  
+  if (!Number.isFinite(input.a) || !Number.isFinite(input.b)) {
+    throw new Error('Invalid input: numbers must be finite');
+  }
+  
+  return { result: input.a / input.b };
+}
+```
+
+## Advanced Patterns
+
+### Stateful Services
+
+Services can maintain state across invocations:
+
+```typescript
+export class CacheService {
+  private cache = new Map<string, any>();
+  private stats = { hits: 0, misses: 0 };
+
+  @Tool({ description: 'Get cached value' })
+  async get(args: { key: string }) {
+    const value = this.cache.get(args.key);
+    
+    if (value) {
+      this.stats.hits++;
+      return { value, cached: true };
+    }
+    
+    this.stats.misses++;
+    return { value: null, cached: false };
+  }
+
+  @Tool({ description: 'Set cached value' })
+  async set(args: { key: string; value: any }) {
+    this.cache.set(args.key, args.value);
+    return { success: true };
+  }
+
+  @Resource({ description: 'Cache statistics' })
+  getStats() {
+    return this.stats;
+  }
+}
+```
+
+### Dependency Injection
+
+Pass dependencies through the constructor:
+
+```typescript mcp/database/index.ts
+import { database } from '../config.js';
+
+export class DatabaseService {
+  constructor(private db = database) {}
+
+  @Tool({ description: 'Query database' })
+  async query(args: { sql: string }) {
+    const results = await this.db.query(args.sql);
+    return { results };
+  }
+}
+```
+
+### Composable Services
+
+Services can call other services:
+
+```typescript
+export class CompositeService {
+  @Tool({ description: 'Analyze and store sentiment' })
+  async analyzAndStore(args: { text: string }) {
+    // Use private methods to organize logic
+    const sentiment = await this.analyzeSentiment(args.text);
+    await this.storeSentiment(sentiment);
+    
+    return { 
+      sentiment,
+      stored: true,
+      timestamp: new Date().toISOString()
+    };
+  }
+  
+  private async analyzeSentiment(text: string) {
+    // Analysis logic
+    return { sentiment: 'positive', score: 0.8 };
+  }
+  
+  private async storeSentiment(data: any) {
+    // Storage logic
+  }
+}
+```
+
+## Troubleshooting
+
+### Service Not Discovered
+
+**Problem:** Your service isn't being registered.
+
+**Solutions:**
+- Ensure the file is in the `./mcp` directory
+- Export your service class: `export class MyService`
+- Check TypeScript compilation: `npm run build`
+- Verify no constructor parameters are required
+
+### Schema Validation Errors
+
+**Problem:** Input validation is failing.
+
+**Solutions:**
+- Check `@SchemaConstraint` definitions match your types
+- Use `@Optional()` for optional fields
+- Verify enum values match exactly
+- Test with valid sample data first
+
+### Decorator Not Working
+
+**Problem:** `@Tool`, `@Prompt`, or `@Resource` decorator isn't recognized.
+
+**Solutions:**
+- Enable decorators in `tsconfig.json`:
+  ```json
+  {
+    "compilerOptions": {
+      "experimentalDecorators": true,
+      "emitDecoratorMetadata": true
+    }
+  }
+  ```
+- Import decorators from `@leanmcp/core`
+- Restart your TypeScript language server
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Auth Integration" icon="lock" href="/guides/auth-integration">
+    Add authentication to protect your services
+  </Card>
+  <Card title="Schema Design" icon="diagram-project" href="/guides/schema-design">
+    Learn advanced schema validation patterns
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/guides/error-handling">
+    Implement robust error handling
+  </Card>
+  <Card title="Deployment" icon="cloud" href="/guides/deployment">
+    Deploy your services to production
+  </Card>
+</CardGroup>

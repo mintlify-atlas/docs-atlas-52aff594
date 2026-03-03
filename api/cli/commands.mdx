@@ -1,0 +1,432 @@
+---
+title: 'CLI Commands'
+description: 'Complete reference for all LeanMCP CLI commands'
+---
+
+## create
+
+Create a new LeanMCP project with Streamable HTTP transport.
+
+```bash
+leanmcp create <projectName> [options]
+```
+
+### Arguments
+
+<ParamField path="projectName" type="string" required>
+  Name of the project to create
+</ParamField>
+
+### Options
+
+<ParamField path="--allow-all" type="boolean" default="false">
+  Skip interactive confirmations and assume Yes
+</ParamField>
+
+<ParamField path="--no-dashboard" type="boolean" default="false">
+  Disable dashboard UI at / and /mcp GET endpoints
+</ParamField>
+
+<ParamField path="-i, --install" type="boolean" default="false">
+  Install dependencies automatically (non-interactive, no dev server)
+</ParamField>
+
+<ParamField path="--no-install" type="boolean" default="false">
+  Skip dependency installation (non-interactive)
+</ParamField>
+
+<ParamField path="--python" type="boolean" default="false">
+  Create a Python MCP project instead of TypeScript
+</ParamField>
+
+### Examples
+
+```bash
+# Create new TypeScript project (interactive)
+leanmcp create my-app
+
+# Create new Python project
+leanmcp create my-app --python
+
+# Create and install deps (non-interactive)
+leanmcp create my-app -i
+
+# Create without installing deps
+leanmcp create my-app --no-install
+```
+
+---
+
+## dev
+
+Start development server with UI hot-reload (builds @UIApp components).
+
+```bash
+leanmcp dev
+```
+
+### Behavior
+
+- Scans for `@UIApp` components in the project
+- Builds UI components with Vite
+- Starts `tsx watch main.ts` for hot-reload
+- Watches `mcp/**/*` for changes and rebuilds components automatically
+
+---
+
+## build
+
+Build UI components and compile TypeScript for production.
+
+```bash
+leanmcp build
+```
+
+### Steps
+
+1. Scans for `@UIApp` components
+2. Builds UI components with Vite (production mode)
+3. Compiles TypeScript with `tsc`
+4. Generates schema metadata
+
+---
+
+## start
+
+Build UI components and start production server.
+
+```bash
+leanmcp start
+```
+
+### Behavior
+
+- Runs the build process (UI + TypeScript)
+- Starts the production server with `node dist/main.js`
+
+---
+
+## login
+
+Authenticate with LeanMCP cloud using an API key.
+
+```bash
+leanmcp login
+```
+
+### Behavior
+
+- Prompts for API key from https://ship.leanmcp.com/api-keys
+- Validates the key with LeanMCP API
+- Stores credentials in `~/.leanmcp/config.json`
+
+---
+
+## logout
+
+Remove stored API key and logout from LeanMCP cloud.
+
+```bash
+leanmcp logout
+```
+
+---
+
+## whoami
+
+Show current authentication status and account info.
+
+```bash
+leanmcp whoami
+```
+
+### Response Fields
+
+<ResponseField name="displayName" type="string">
+  User's display name
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  User's email address
+</ResponseField>
+
+<ResponseField name="username" type="string">
+  User's username
+</ResponseField>
+
+<ResponseField name="userTier" type="string">
+  Account tier (e.g., 'free', 'pro')
+</ResponseField>
+
+---
+
+## deploy
+
+Deploy an MCP server to LeanMCP cloud.
+
+```bash
+leanmcp deploy [folder] [options]
+```
+
+### Arguments
+
+<ParamField path="folder" type="string" default=".">
+  Path to the project folder to deploy
+</ParamField>
+
+### Options
+
+<ParamField path="-s, --subdomain" type="string">
+  Subdomain for deployment (e.g., 'my-app' → my-app.leanmcp.app)
+</ParamField>
+
+<ParamField path="-y, --yes" type="boolean" default="false">
+  Skip confirmation prompts
+</ParamField>
+
+### Examples
+
+```bash
+# Deploy current directory
+leanmcp deploy
+
+# Deploy with custom subdomain
+leanmcp deploy . --subdomain my-api
+
+# Deploy with auto-confirm
+leanmcp deploy . -y
+```
+
+---
+
+## add
+
+Add a new MCP service to your project.
+
+```bash
+leanmcp add <serviceName>
+```
+
+### Arguments
+
+<ParamField path="serviceName" type="string" required>
+  Name of the service to create
+</ParamField>
+
+### Behavior
+
+- Creates `mcp/<serviceName>/index.ts` with example tool, prompt, and resource
+- Service is auto-discovered on next server start
+
+### Example
+
+```bash
+leanmcp add weather
+# Creates mcp/weather/index.ts
+```
+
+---
+
+## projects
+
+Manage LeanMCP cloud projects.
+
+### list
+
+List all your deployed projects.
+
+```bash
+leanmcp projects list
+leanmcp projects ls  # alias
+```
+
+### get
+
+Get details of a specific project.
+
+```bash
+leanmcp projects get <projectId>
+```
+
+<ParamField path="projectId" type="string" required>
+  ID of the project to retrieve
+</ParamField>
+
+### delete
+
+Delete a project.
+
+```bash
+leanmcp projects delete <projectId> [options]
+leanmcp projects rm <projectId> [options]  # alias
+```
+
+<ParamField path="projectId" type="string" required>
+  ID of the project to delete
+</ParamField>
+
+<ParamField path="-f, --force" type="boolean" default="false">
+  Skip confirmation prompt
+</ParamField>
+
+---
+
+## env
+
+Manage environment variables for deployed projects.
+
+### list
+
+List all environment variables.
+
+```bash
+leanmcp env list [folder] [options]
+leanmcp env ls [folder] [options]  # alias
+```
+
+<ParamField path="folder" type="string" default=".">
+  Project folder path
+</ParamField>
+
+<ParamField path="--reveal" type="boolean" default="false">
+  Show actual values instead of masked
+</ParamField>
+
+<ParamField path="--project-id" type="string">
+  Specify project ID directly
+</ParamField>
+
+### set
+
+Set an environment variable.
+
+```bash
+leanmcp env set <keyValue> [folder] [options]
+```
+
+<ParamField path="keyValue" type="string" required>
+  Environment variable in KEY=VALUE format
+</ParamField>
+
+<ParamField path="folder" type="string" default=".">
+  Project folder path
+</ParamField>
+
+<ParamField path="-f, --file" type="string">
+  Load from env file instead of single key-value
+</ParamField>
+
+<ParamField path="--force" type="boolean" default="false">
+  Skip confirmation for reserved keys
+</ParamField>
+
+#### Examples
+
+```bash
+# Set a single variable
+leanmcp env set API_KEY=secret123
+
+# Load from file
+leanmcp env set --file .env.production
+```
+
+### get
+
+Get an environment variable value.
+
+```bash
+leanmcp env get <key> [folder] [options]
+```
+
+<ParamField path="key" type="string" required>
+  Environment variable key
+</ParamField>
+
+<ParamField path="--reveal" type="boolean" default="false">
+  Show actual value
+</ParamField>
+
+### remove
+
+Remove an environment variable.
+
+```bash
+leanmcp env remove <key> [folder] [options]
+leanmcp env rm <key> [folder] [options]  # alias
+```
+
+<ParamField path="key" type="string" required>
+  Environment variable key to remove
+</ParamField>
+
+<ParamField path="--force" type="boolean" default="false">
+  Skip confirmation
+</ParamField>
+
+### pull
+
+Download environment variables to local .env file.
+
+```bash
+leanmcp env pull [folder] [options]
+```
+
+<ParamField path="-f, --file" type="string" default=".env.remote">
+  Output file path
+</ParamField>
+
+### push
+
+Upload environment variables from local .env file (replaces all).
+
+```bash
+leanmcp env push [folder] [options]
+```
+
+<ParamField path="-f, --file" type="string" default=".env">
+  Input file path
+</ParamField>
+
+<ParamField path="--force" type="boolean" default="false">
+  Skip confirmation
+</ParamField>
+
+---
+
+## send-feedback
+
+Send feedback to the LeanMCP team.
+
+```bash
+leanmcp send-feedback [message] [options]
+```
+
+<ParamField path="message" type="string">
+  Feedback message
+</ParamField>
+
+<ParamField path="--anon" type="boolean" default="false">
+  Send feedback anonymously
+</ParamField>
+
+<ParamField path="--include-logs" type="boolean" default="false">
+  Include local log files with feedback
+</ParamField>
+
+---
+
+## Global Options
+
+These options are available for all commands:
+
+<ParamField path="-v, --version" type="boolean">
+  Output the current version
+</ParamField>
+
+<ParamField path="-h, --help" type="boolean">
+  Display help for command
+</ParamField>
+
+<ParamField path="-d, --debug" type="boolean">
+  Enable debug logging for all commands
+</ParamField>

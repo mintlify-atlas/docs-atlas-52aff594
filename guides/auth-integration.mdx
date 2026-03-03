@@ -1,0 +1,543 @@
+---
+title: Authentication Integration
+description: Step-by-step guide to integrating authentication with Auth0, Clerk, AWS Cognito, and more
+icon: lock
+---
+
+Protect your MCP services with token-based authentication using the `@Authenticated` decorator and multiple auth providers.
+
+## Overview
+
+LeanMCP's authentication system provides:
+
+- **Simple decorator-based protection** - Add `@Authenticated` to methods or classes
+- **Multi-provider support** - Auth0, Clerk, AWS Cognito, Firebase, LeanMCP
+- **Automatic user injection** - Access `authUser` in protected methods
+- **Concurrency safe** - Uses AsyncLocalStorage for request isolation
+- **MCP protocol compliant** - Tokens passed via `_meta.authorization`
+
+## Installation
+
+Install the auth package:
+
+```bash
+npm install @leanmcp/auth
+```
+
+## Auth0 Integration
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    npm install axios jsonwebtoken jwk-to-pem
+    ```
+  </Step>
+  
+  <Step title="Configure Auth0">
+    Create an API in your Auth0 dashboard and get credentials:
+    
+    ```bash .env
+    AUTH0_DOMAIN=your-tenant.auth0.com
+    AUTH0_CLIENT_ID=your-client-id
+    AUTH0_CLIENT_SECRET=your-client-secret
+    AUTH0_AUDIENCE=https://your-api-identifier
+    ```
+  </Step>
+  
+  <Step title="Initialize auth provider">
+    Create a shared config file:
+    
+    ```typescript mcp/config.ts
+    import { AuthProvider } from "@leanmcp/auth";
+    
+    if (!process.env.AUTH0_DOMAIN || !process.env.AUTH0_CLIENT_ID || !process.env.AUTH0_AUDIENCE) {
+      throw new Error(
+        'Missing required Auth0 configuration. Please set AUTH0_DOMAIN, AUTH0_CLIENT_ID, and AUTH0_AUDIENCE in .env file'
+      );
+    }
+    
+    export const authProvider = new AuthProvider('auth0', {
+      domain: process.env.AUTH0_DOMAIN,
+      clientId: process.env.AUTH0_CLIENT_ID,
+      clientSecret: process.env.AUTH0_CLIENT_SECRET,
+      audience: process.env.AUTH0_AUDIENCE,
+      scopes: 'openid profile email offline_access'
+    });
+    
+    await authProvider.init();
+    ```
+  </Step>
+  
+  <Step title="Protect your service">
+    Apply the `@Authenticated` decorator:
+    
+    ```typescript mcp/demo/index.ts
+    import { Tool, SchemaConstraint } from "@leanmcp/core";
+    import { Authenticated } from "@leanmcp/auth";
+    import { authProvider } from "../config.js";
+    
+    class EchoInput {
+      @SchemaConstraint({
+        description: 'Message to echo back',
+        minLength: 1
+      })
+      message!: string;
+    }
+    
+    @Authenticated(authProvider)
+    export class DemoService {
+      @Tool({ 
+        description: 'Get the authenticated user profile information from Auth0'
+      })
+      async getUserProfile(): Promise<{
+        userId: string;
+        email: string;
+        name?: string;
+        picture?: string;
+        emailVerified?: boolean;
+      }> {
+        // authUser is automatically available
+        return {
+          userId: authUser.sub,
+          email: authUser.email,
+          name: authUser.name,
+          picture: authUser.picture,
+          emailVerified: authUser.email_verified
+        };
+      }
+    
+      @Tool({ 
+        description: 'Echo back a message with authenticated user information',
+        inputClass: EchoInput
+      })
+      async echo(args: EchoInput): Promise<{ 
+        message: string;
+        timestamp: string;
+        userId: string;
+        userEmail: string;
+      }> {
+        return {
+          message: args.message,
+          timestamp: new Date().toISOString(),
+          userId: authUser.sub,
+          userEmail: authUser.email
+        };
+      }
+    }
+    ```
+  </Step>
+  
+  <Step title="Test the integration">
+    Start your server and call a protected tool:
+    
+    ```bash
+    npm start
+    ```
+    
+    Make a request with authentication:
+    
+    ```typescript
+    await mcpClient.callTool({
+      name: 'getUserProfile',
+      arguments: {},
+      _meta: {
+        authorization: {
+          type: 'bearer',
+          token: 'your-jwt-token'
+        }
+      }
+    });
+    ```
+  </Step>
+</Steps>
+
+## Clerk Integration
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    npm install axios jsonwebtoken jwk-to-pem
+    ```
+  </Step>
+  
+  <Step title="Configure Clerk">
+    Get your credentials from the Clerk dashboard:
+    
+    ```bash .env
+    CLERK_FRONTEND_API=your-frontend-api.clerk.accounts.dev
+    CLERK_SECRET_KEY=sk_test_...
+    ```
+  </Step>
+  
+  <Step title="Initialize auth provider">
+    Session mode (default):
+    
+    ```typescript mcp/config.ts
+    import { AuthProvider } from "@leanmcp/auth";
+    
+    if (!process.env.CLERK_FRONTEND_API || !process.env.CLERK_SECRET_KEY) {
+      throw new Error(
+        'Missing required Clerk configuration. Please set CLERK_FRONTEND_API and CLERK_SECRET_KEY in .env file'
+      );
+    }
+    
+    export const authProvider = new AuthProvider('clerk', {
+      frontendApi: process.env.CLERK_FRONTEND_API,
+      secretKey: process.env.CLERK_SECRET_KEY
+    });
+    
+    await authProvider.init();
+    ```
+    
+    OAuth mode (with refresh tokens):
+    
+    ```typescript
+    export const authProvider = new AuthProvider('clerk', {
+      frontendApi: process.env.CLERK_FRONTEND_API,
+      secretKey: process.env.CLERK_SECRET_KEY,
+      clientId: process.env.CLERK_CLIENT_ID,
+      clientSecret: process.env.CLERK_CLIENT_SECRET,
+      redirectUri: 'https://yourapp.com/callback'
+    });
+    ```
+  </Step>
+  
+  <Step title="Protect your service">
+    ```typescript mcp/demo/index.ts
+    import { Tool } from "@leanmcp/core";
+    import { Authenticated } from "@leanmcp/auth";
+    import { authProvider } from "../config.js";
+    
+    @Authenticated(authProvider)
+    export class DemoService {
+      @Tool({ 
+        description: 'Get the authenticated user profile information from Clerk'
+      })
+      async getUserProfile() {
+        return {
+          userId: authUser.userId || authUser.sub,
+          email: authUser.email,
+          firstName: authUser.firstName,
+          lastName: authUser.lastName,
+          imageUrl: authUser.imageUrl
+        };
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## AWS Cognito Integration
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    npm install @aws-sdk/client-cognito-identity-provider axios jsonwebtoken jwk-to-pem
+    ```
+  </Step>
+  
+  <Step title="Configure Cognito">
+    ```bash .env
+    AWS_REGION=us-east-1
+    COGNITO_USER_POOL_ID=us-east-1_XXXXXXXXX
+    COGNITO_CLIENT_ID=your-client-id
+    ```
+  </Step>
+  
+  <Step title="Initialize auth provider">
+    ```typescript mcp/config.ts
+    import { AuthProvider } from "@leanmcp/auth";
+    
+    export const authProvider = new AuthProvider('cognito', {
+      region: process.env.AWS_REGION!,
+      userPoolId: process.env.COGNITO_USER_POOL_ID!,
+      clientId: process.env.COGNITO_CLIENT_ID!
+    });
+    
+    await authProvider.init();
+    ```
+  </Step>
+  
+  <Step title="Access Cognito user data">
+    ```typescript
+    @Authenticated(authProvider)
+    export class UserService {
+      @Tool({ description: 'Get user with Cognito groups' })
+      async getUser() {
+        return {
+          userId: authUser.sub,
+          username: authUser['cognito:username'],
+          email: authUser.email,
+          emailVerified: authUser.email_verified,
+          groups: authUser['cognito:groups'] || []
+        };
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Firebase Integration
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    npm install firebase-admin
+    ```
+  </Step>
+  
+  <Step title="Configure Firebase">
+    Download your service account JSON from Firebase Console:
+    
+    ```bash .env
+    FIREBASE_PROJECT_ID=your-project-id
+    FIREBASE_CLIENT_EMAIL=your-service-account@project.iam.gserviceaccount.com
+    FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+    ```
+  </Step>
+  
+  <Step title="Initialize auth provider">
+    ```typescript mcp/config.ts
+    import { AuthProvider } from "@leanmcp/auth";
+    
+    export const authProvider = new AuthProvider('firebase', {
+      projectId: process.env.FIREBASE_PROJECT_ID!,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL!,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY!.replace(/\\n/g, '\n')
+    });
+    
+    await authProvider.init();
+    ```
+  </Step>
+</Steps>
+
+## The authUser Variable
+
+When using `@Authenticated`, a global `authUser` variable is automatically available in your methods:
+
+```typescript
+@Tool({ description: 'Create post' })
+@Authenticated(authProvider)
+async createPost(input: { title: string; content: string }) {
+  // authUser is automatically available
+  console.log('User ID:', authUser.sub);
+  console.log('Email:', authUser.email);
+  
+  return {
+    id: generateId(),
+    title: input.title,
+    content: input.content,
+    authorId: authUser.sub,
+    authorEmail: authUser.email
+  };
+}
+```
+
+### Provider-Specific User Data
+
+**Auth0:**
+```typescript
+{
+  sub: 'auth0|507f1f77bcf86cd799439011',
+  email: 'user@example.com',
+  email_verified: true,
+  name: 'John Doe',
+  picture: 'https://s.gravatar.com/avatar/...'
+}
+```
+
+**Clerk:**
+```typescript
+{
+  sub: 'user_2abc123xyz',
+  userId: 'user_2abc123xyz',
+  email: 'user@example.com',
+  firstName: 'John',
+  lastName: 'Doe',
+  imageUrl: 'https://img.clerk.com/...'
+}
+```
+
+**AWS Cognito:**
+```typescript
+{
+  sub: 'user-uuid',
+  email: 'user@example.com',
+  email_verified: true,
+  'cognito:username': 'username',
+  'cognito:groups': ['admin', 'users']
+}
+```
+
+## Authentication Options
+
+### Skip User Fetch
+
+For better performance when you only need token validation:
+
+```typescript
+@Tool({ description: 'Public data with auth' })
+@Authenticated(authProvider, { getUser: false })
+async getPublicData() {
+  // Token is verified but authUser is undefined
+  // Faster since it skips the user info fetch
+}
+```
+
+### Class vs Method Level
+
+**Protect entire service:**
+```typescript
+@Authenticated(authProvider)
+export class SecureService {
+  // All methods require authentication
+  @Tool({ description: 'Tool 1' })
+  async tool1() { }
+  
+  @Tool({ description: 'Tool 2' })
+  async tool2() { }
+}
+```
+
+**Protect specific methods:**
+```typescript
+export class MixedService {
+  // Public method
+  @Tool({ description: 'Public tool' })
+  async publicTool() { }
+  
+  // Protected method
+  @Tool({ description: 'Protected tool' })
+  @Authenticated(authProvider)
+  async protectedTool() { }
+}
+```
+
+## Error Handling
+
+Handle authentication errors gracefully:
+
+```typescript
+import { AuthenticationError } from '@leanmcp/auth';
+
+try {
+  await service.protectedMethod({ text: 'test' });
+} catch (error) {
+  if (error instanceof AuthenticationError) {
+    switch (error.code) {
+      case 'MISSING_TOKEN':
+        console.log('No token provided');
+        break;
+      case 'INVALID_TOKEN':
+        console.log('Token is invalid or expired');
+        break;
+      case 'VERIFICATION_FAILED':
+        console.log('Verification failed:', error.message);
+        break;
+    }
+  }
+}
+```
+
+## Client Integration
+
+Clients pass tokens via the `_meta` field:
+
+```typescript
+// JavaScript/TypeScript client
+await mcpClient.callTool({
+  name: 'analyzeSentiment',
+  arguments: { text: 'Hello world' },
+  _meta: {
+    authorization: {
+      type: 'bearer',
+      token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+    }
+  }
+});
+```
+
+```python
+# Python client
+await mcp_client.call_tool(
+    name="analyzeSentiment",
+    arguments={"text": "Hello world"},
+    _meta={
+        "authorization": {
+            "type": "bearer",
+            "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        }
+    }
+)
+```
+
+## Best Practices
+
+### Security
+
+- Always use HTTPS in production
+- Store tokens securely (keychain, encrypted storage)
+- Implement token refresh before expiration
+- Add rate limiting to protect against brute force
+- Never log or expose tokens in error messages
+
+### Configuration
+
+- Use environment variables for credentials
+- Never hardcode secrets in code
+- Use `_meta` for auth, not business arguments
+- Validate environment variables at startup
+
+### Performance
+
+- Use `getUser: false` when you only need token validation
+- JWKS keys are cached automatically
+- Consider caching user data for repeated calls
+
+## Troubleshooting
+
+### Token Not Being Recognized
+
+**Problem:** `MISSING_TOKEN` error even when passing token.
+
+**Solutions:**
+- Ensure token is in `_meta.authorization.token`
+- Check authorization type is `'bearer'`
+- Verify token format (should be JWT string)
+
+### Token Verification Fails
+
+**Problem:** `INVALID_TOKEN` or `VERIFICATION_FAILED` errors.
+
+**Solutions:**
+- Verify token hasn't expired
+- Check provider configuration (domain, client ID, etc.)
+- Ensure provider is initialized with `await authProvider.init()`
+- Verify audience matches in Auth0/Cognito
+
+### authUser is Undefined
+
+**Problem:** `authUser` variable is undefined in protected methods.
+
+**Solutions:**
+- Ensure `getUser` option is not set to `false`
+- Check that `@Authenticated` decorator is applied
+- Verify the decorator is from `@leanmcp/auth`
+- Check provider supports user info endpoint
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Schema Design" icon="diagram-project" href="/guides/schema-design">
+    Design robust validation schemas
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/guides/error-handling">
+    Handle authentication and validation errors
+  </Card>
+  <Card title="Deployment" icon="cloud" href="/guides/deployment">
+    Deploy authenticated services to production
+  </Card>
+  <Card title="API Reference" icon="book" href="/api/auth/auth-provider">
+    Complete auth API documentation
+  </Card>
+</CardGroup>

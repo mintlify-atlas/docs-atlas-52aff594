@@ -1,0 +1,773 @@
+---
+title: Deployment Guide
+description: Deploy your MCP services to production with Docker, serverless platforms, and environment configuration
+icon: cloud
+---
+
+Learn how to deploy your LeanMCP services to production with proper environment setup, Docker, and serverless platforms.
+
+## Environment Setup
+
+### Development vs Production
+
+Separate environment variables for different stages:
+
+```bash .env.local
+# Development
+NODE_ENV=development
+PORT=3001
+LOG_LEVEL=debug
+CORS_ENABLED=true
+
+# Auth (development)
+AUTH0_DOMAIN=dev-tenant.auth0.com
+AUTH0_CLIENT_ID=dev-client-id
+AUTH0_AUDIENCE=https://dev-api
+```
+
+```bash .env.production
+# Production
+NODE_ENV=production
+PORT=8080
+LOG_LEVEL=info
+CORS_ENABLED=false
+
+# Auth (production)
+AUTH0_DOMAIN=prod-tenant.auth0.com
+AUTH0_CLIENT_ID=prod-client-id
+AUTH0_AUDIENCE=https://api.yourapp.com
+```
+
+### Environment Validation
+
+Validate required environment variables at startup:
+
+```typescript main.ts
+import 'dotenv/config';
+
+// Validate required environment variables
+const required = [
+  'AUTH0_DOMAIN',
+  'AUTH0_CLIENT_ID',
+  'AUTH0_AUDIENCE'
+];
+
+for (const key of required) {
+  if (!process.env[key]) {
+    throw new Error(`Missing required environment variable: ${key}`);
+  }
+}
+
+console.log('Environment variables validated');
+
+// Start server
+await createHTTPServer({
+  name: 'my-mcp-server',
+  version: '1.0.0',
+  port: parseInt(process.env.PORT || '3001'),
+  cors: process.env.CORS_ENABLED === 'true',
+  logging: true
+});
+```
+
+## Building for Production
+
+<Steps>
+  <Step title="Build TypeScript">
+    Compile your TypeScript code:
+    
+    ```bash
+    npm run build
+    ```
+    
+    This generates JavaScript files in the `dist/` directory.
+  </Step>
+  
+  <Step title="Test the build">
+    Run the production build locally:
+    
+    ```bash
+    node dist/main.js
+    ```
+  </Step>
+  
+  <Step title="Verify outputs">
+    Check that all files are generated:
+    
+    ```bash
+    dist/
+    ├── main.js
+    ├── main.js.map
+    └── mcp/
+        ├── sentiment/
+        │   └── index.js
+        └── config.js
+    ```
+  </Step>
+</Steps>
+
+### Production Scripts
+
+Update your `package.json`:
+
+```json package.json
+{
+  "name": "my-mcp-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "leanmcp dev",
+    "build": "leanmcp build",
+    "start": "node dist/main.js",
+    "test": "jest",
+    "lint": "eslint . --ext .ts"
+  },
+  "dependencies": {
+    "@leanmcp/core": "^0.3.2",
+    "@leanmcp/auth": "^0.3.2",
+    "dotenv": "^16.0.0"
+  },
+  "devDependencies": {
+    "@leanmcp/cli": "^0.3.1",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.6.3"
+  }
+}
+```
+
+## Docker Deployment
+
+### Dockerfile
+
+Create a production-ready Dockerfile:
+
+```dockerfile Dockerfile
+# Build stage
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY tsconfig.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source code
+COPY . .
+
+# Build application
+RUN npm run build
+
+# Production stage
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install production dependencies only
+RUN npm ci --only=production
+
+# Copy built application from builder
+COPY --from=builder /app/dist ./dist
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+USER nodejs
+
+# Expose port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:8080/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+
+# Start application
+CMD ["node", "dist/main.js"]
+```
+
+### Docker Compose
+
+For local development and testing:
+
+```yaml docker-compose.yml
+version: '3.8'
+
+services:
+  mcp-server:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      - AUTH0_DOMAIN=${AUTH0_DOMAIN}
+      - AUTH0_CLIENT_ID=${AUTH0_CLIENT_ID}
+      - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+```
+
+### Build and Run
+
+<Steps>
+  <Step title="Build Docker image">
+    ```bash
+    docker build -t my-mcp-server:latest .
+    ```
+  </Step>
+  
+  <Step title="Run container">
+    ```bash
+    docker run -p 8080:8080 \
+      -e AUTH0_DOMAIN="your-tenant.auth0.com" \
+      -e AUTH0_CLIENT_ID="your-client-id" \
+      -e AUTH0_AUDIENCE="https://your-api" \
+      my-mcp-server:latest
+    ```
+  </Step>
+  
+  <Step title="Test the container">
+    ```bash
+    curl http://localhost:8080/health
+    ```
+  </Step>
+</Steps>
+
+### Docker Optimization
+
+**Multi-stage builds** reduce image size:
+```dockerfile
+# Only production dependencies in final image
+RUN npm ci --only=production
+```
+
+**Layer caching** speeds up builds:
+```dockerfile
+# Copy package files first (changes less often)
+COPY package*.json ./
+RUN npm ci
+
+# Copy source code last (changes often)
+COPY . .
+```
+
+**.dockerignore** file:
+```text .dockerignore
+node_modules
+dist
+.env
+.env.*
+.git
+.gitignore
+*.md
+npm-debug.log
+```
+
+## AWS Lambda Deployment
+
+### Lambda Handler
+
+Create a Lambda-compatible handler:
+
+```typescript lambda.ts
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { createHTTPServer } from '@leanmcp/core';
+
+let serverPromise: Promise<any> | null = null;
+
+function getServer() {
+  if (!serverPromise) {
+    serverPromise = createHTTPServer({
+      name: 'my-mcp-server',
+      version: '1.0.0',
+      stateless: true,  // Important for Lambda
+      logging: true
+    });
+  }
+  return serverPromise;
+}
+
+export const handler = async (
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> => {
+  try {
+    const server = await getServer();
+    
+    // Parse request
+    const body = JSON.parse(event.body || '{}');
+    
+    // Handle MCP request
+    const response = await server.handleRequest(body);
+    
+    return {
+      statusCode: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*'
+      },
+      body: JSON.stringify(response)
+    };
+  } catch (error) {
+    console.error('Lambda error:', error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ 
+        error: error instanceof Error ? error.message : 'Internal server error' 
+      })
+    };
+  }
+};
+```
+
+### SAM Template
+
+AWS Serverless Application Model (SAM) template:
+
+```yaml template.yaml
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: LeanMCP Server on Lambda
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: nodejs20.x
+
+Resources:
+  MCPServerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: dist/
+      Handler: lambda.handler
+      Environment:
+        Variables:
+          NODE_ENV: production
+          AUTH0_DOMAIN: !Ref Auth0Domain
+          AUTH0_CLIENT_ID: !Ref Auth0ClientId
+          AUTH0_AUDIENCE: !Ref Auth0Audience
+      Events:
+        MCPApi:
+          Type: Api
+          Properties:
+            Path: /mcp
+            Method: POST
+        Health:
+          Type: Api
+          Properties:
+            Path: /health
+            Method: GET
+
+Parameters:
+  Auth0Domain:
+    Type: String
+    Description: Auth0 domain
+  Auth0ClientId:
+    Type: String
+    Description: Auth0 client ID
+  Auth0Audience:
+    Type: String
+    Description: Auth0 audience
+
+Outputs:
+  MCPServerApi:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/mcp'
+```
+
+### Deploy to Lambda
+
+<Steps>
+  <Step title="Install SAM CLI">
+    ```bash
+    brew install aws-sam-cli  # macOS
+    # or
+    pip install aws-sam-cli   # Python
+    ```
+  </Step>
+  
+  <Step title="Build application">
+    ```bash
+    npm run build
+    sam build
+    ```
+  </Step>
+  
+  <Step title="Deploy">
+    ```bash
+    sam deploy --guided
+    ```
+    
+    Follow the prompts to configure your stack.
+  </Step>
+</Steps>
+
+## Vercel Deployment
+
+### Vercel Configuration
+
+Create a serverless function:
+
+```typescript api/mcp.ts
+import { VercelRequest, VercelResponse } from '@vercel/node';
+import { createHTTPServer } from '@leanmcp/core';
+
+let serverPromise: Promise<any> | null = null;
+
+function getServer() {
+  if (!serverPromise) {
+    serverPromise = createHTTPServer({
+      name: 'my-mcp-server',
+      version: '1.0.0',
+      stateless: true,
+      logging: true
+    });
+  }
+  return serverPromise;
+}
+
+export default async function handler(
+  req: VercelRequest,
+  res: VercelResponse
+) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+  
+  try {
+    const server = await getServer();
+    const response = await server.handleRequest(req.body);
+    
+    res.status(200).json(response);
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Internal error' 
+    });
+  }
+}
+```
+
+### Vercel Config
+
+```json vercel.json
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/**/*.ts",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/mcp",
+      "dest": "/api/mcp"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
+}
+```
+
+### Deploy to Vercel
+
+<Steps>
+  <Step title="Install Vercel CLI">
+    ```bash
+    npm install -g vercel
+    ```
+  </Step>
+  
+  <Step title="Login to Vercel">
+    ```bash
+    vercel login
+    ```
+  </Step>
+  
+  <Step title="Deploy">
+    ```bash
+    vercel --prod
+    ```
+  </Step>
+  
+  <Step title="Set environment variables">
+    ```bash
+    vercel env add AUTH0_DOMAIN
+    vercel env add AUTH0_CLIENT_ID
+    vercel env add AUTH0_AUDIENCE
+    ```
+  </Step>
+</Steps>
+
+## Railway Deployment
+
+Railway provides simple container deployment:
+
+<Steps>
+  <Step title="Connect repository">
+    Connect your GitHub repository to Railway.
+  </Step>
+  
+  <Step title="Add Dockerfile">
+    Railway automatically detects the Dockerfile.
+  </Step>
+  
+  <Step title="Set environment variables">
+    Add environment variables in Railway dashboard:
+    - `AUTH0_DOMAIN`
+    - `AUTH0_CLIENT_ID`
+    - `AUTH0_AUDIENCE`
+    - `PORT` (Railway provides this)
+  </Step>
+  
+  <Step title="Deploy">
+    Push to main branch to trigger deployment.
+  </Step>
+</Steps>
+
+## Health Checks
+
+Implement health checks for monitoring:
+
+```typescript main.ts
+import { createHTTPServer } from '@leanmcp/core';
+import express from 'express';
+
+const app = express();
+
+// Basic health check
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'healthy',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Detailed health check
+app.get('/health/detailed', async (req, res) => {
+  const health = {
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    checks: {
+      database: await checkDatabase(),
+      auth: await checkAuth(),
+      externalApi: await checkExternalAPI()
+    }
+  };
+  
+  const isHealthy = Object.values(health.checks).every(check => check.status === 'ok');
+  res.status(isHealthy ? 200 : 503).json(health);
+});
+
+await createHTTPServer({
+  name: 'my-mcp-server',
+  version: '1.0.0',
+  port: parseInt(process.env.PORT || '3001'),
+  app  // Pass custom Express app
+});
+```
+
+## Monitoring and Logging
+
+### Structured Logging
+
+Use structured logging for better observability:
+
+```typescript
+import winston from 'winston';
+
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.Console()
+  ]
+});
+
+export class SentimentService {
+  @Tool({ description: 'Analyze sentiment' })
+  async analyzeSentiment(args: AnalyzeSentimentInput) {
+    logger.info('Analyzing sentiment', {
+      textLength: args.text.length,
+      language: args.language
+    });
+    
+    const result = this.analyze(args.text);
+    
+    logger.info('Sentiment analysis complete', {
+      sentiment: result.sentiment,
+      score: result.score
+    });
+    
+    return result;
+  }
+}
+```
+
+### Error Tracking
+
+Integrate error tracking:
+
+```typescript
+import * as Sentry from '@sentry/node';
+
+if (process.env.NODE_ENV === 'production') {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV,
+    tracesSampleRate: 0.1
+  });
+}
+```
+
+## Performance Optimization
+
+### Enable Compression
+
+```typescript
+import compression from 'compression';
+import express from 'express';
+
+const app = express();
+app.use(compression());
+```
+
+### Request Rate Limiting
+
+```typescript
+import rateLimit from 'express-rate-limit';
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100 // limit each IP to 100 requests per windowMs
+});
+
+app.use('/mcp', limiter);
+```
+
+### Caching
+
+```typescript
+export class CachedService {
+  private cache = new Map<string, { value: any; expiry: number }>();
+  
+  @Tool({ description: 'Get cached data' })
+  async getData(args: { key: string }) {
+    const cached = this.cache.get(args.key);
+    
+    if (cached && cached.expiry > Date.now()) {
+      return cached.value;
+    }
+    
+    const data = await this.fetchData(args.key);
+    this.cache.set(args.key, {
+      value: data,
+      expiry: Date.now() + 60000 // 1 minute cache
+    });
+    
+    return data;
+  }
+}
+```
+
+## Security Best Practices
+
+### Helmet.js
+
+Add security headers:
+
+```typescript
+import helmet from 'helmet';
+import express from 'express';
+
+const app = express();
+app.use(helmet());
+```
+
+### CORS Configuration
+
+```typescript
+import cors from 'cors';
+
+const corsOptions = {
+  origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
+```
+
+### Secret Management
+
+Use secret management services:
+- **AWS**: AWS Secrets Manager
+- **Vercel**: Environment Variables
+- **Railway**: Environment Variables
+- **Self-hosted**: HashiCorp Vault
+
+## Troubleshooting
+
+### Container Won't Start
+
+**Problem:** Docker container exits immediately.
+
+**Solutions:**
+- Check logs: `docker logs <container-id>`
+- Verify environment variables are set
+- Test build locally: `node dist/main.js`
+- Check for missing dependencies
+
+### Lambda Timeout
+
+**Problem:** Lambda function times out.
+
+**Solutions:**
+- Increase timeout in SAM template
+- Optimize cold start with provisioned concurrency
+- Use stateless mode: `stateless: true`
+- Reduce dependencies
+
+### Memory Issues
+
+**Problem:** Out of memory errors.
+
+**Solutions:**
+- Increase memory limit in Dockerfile/Lambda
+- Check for memory leaks
+- Use streaming for large data
+- Implement proper cleanup in finally blocks
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Creating Services" icon="wrench" href="/guides/creating-services">
+    Build production-ready services
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/guides/error-handling">
+    Handle errors in production
+  </Card>
+  <Card title="Auth Integration" icon="lock" href="/guides/auth-integration">
+    Secure your production deployment
+  </Card>
+  <Card title="Examples" icon="code" href="/examples/sentiment-analysis">
+    See deployment examples
+  </Card>
+</CardGroup>

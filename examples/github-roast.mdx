@@ -1,0 +1,626 @@
+---
+title: 'GitHub Roast'
+description: 'AI-powered GitHub profile roasting with OAuth, stateless mode, and React dashboards'
+icon: 'github'
+---
+
+Build a viral GitHub profile roaster with MCP Authorization, stateless serverless deployment, and a beautiful React dashboard.
+
+<img src="/images/github-roast-demo.png" alt="GitHub Roast Dashboard" className="rounded-lg shadow-lg" />
+
+## Overview
+
+GitHub Roast demonstrates:
+- **MCP Authorization Spec** - OAuth 2.0 integration with ChatGPT
+- **Stateless Mode** - Deploy to serverless platforms (Lambda, Vercel)
+- **GitHub OAuth Proxy** - Secure token handling and encryption
+- **React Dashboard** - Interactive UI with `@leanmcp/ui`
+- **OpenAI Integration** - GPT-4 powered roast generation
+
+## Architecture
+
+<Steps>
+  <Step title="MCP Authorization Flow">
+    ChatGPT initiates OAuth when tools require authentication:
+
+    ```mermaid
+    sequenceDiagram
+        ChatGPT->>MCP Server: Call fetchGitHubProfile
+        MCP Server->>ChatGPT: Return auth error with metadata URL
+        ChatGPT->>User: Show "Sign in with GitHub" button
+        User->>OAuth Server: Click sign in
+        OAuth Server->>GitHub: Redirect to GitHub OAuth
+        GitHub->>OAuth Server: Return access token
+        OAuth Server->>ChatGPT: Issue JWT with encrypted token
+        ChatGPT->>MCP Server: Retry with JWT
+        MCP Server->>GitHub API: Use decrypted token
+        GitHub API->>MCP Server: Return profile data
+        MCP Server->>ChatGPT: Return profile
+    ```
+  </Step>
+
+  <Step title="Stateless JWT encryption">
+    Upstream GitHub tokens are encrypted in JWTs for secure, stateless operation:
+
+    - No session storage required
+    - Deploy to Lambda/Vercel without databases
+    - Tokens encrypted with JWE (AES-256-GCM)
+    - Automatic token refresh support
+  </Step>
+</Steps>
+
+## Implementation
+
+<Steps>
+  <Step title="Configure OAuth server">
+    Set up MCP Authorization with GitHub OAuth proxy:
+
+    ```typescript main.ts
+    import 'dotenv/config';
+    import { createHTTPServer } from '@leanmcp/core';
+
+    const publicUrl = process.env.PUBLIC_URL || `http://localhost:3300`;
+    const oauthEnabled = !!(process.env.GITHUB_CLIENT_ID && process.env.SESSION_SECRET);
+
+    await createHTTPServer({
+      name: 'github-roast',
+      version: '1.0.0',
+      port: 3300,
+      cors: true,
+      logging: true,
+      stateless: true, // CRITICAL: Enable stateless mode
+      
+      auth: {
+        resource: publicUrl,
+        scopesSupported: ['read:user', 'repo'],
+        enableOAuthServer: oauthEnabled,
+        oauthServerOptions: {
+          issuer: publicUrl,
+          sessionSecret: process.env.SESSION_SECRET,
+          
+          // JWT secrets for stateless operation
+          jwtSigningSecret: process.env.JWT_SIGNING_SECRET || process.env.SESSION_SECRET,
+          jwtEncryptionSecret: Buffer.from(
+            process.env.JWT_ENCRYPTION_SECRET || 
+            process.env.SESSION_SECRET.padEnd(64, '0').slice(0, 64),
+            'hex'
+          ),
+          
+          enableDCR: true, // Dynamic Client Registration for ChatGPT
+          tokenTTL: 3600, // 1 hour token lifetime
+          
+          // Proxy to GitHub OAuth
+          upstreamProvider: {
+            id: 'github',
+            authorizationEndpoint: 'https://github.com/login/oauth/authorize',
+            tokenEndpoint: 'https://github.com/login/oauth/access_token',
+            clientId: process.env.GITHUB_CLIENT_ID!,
+            clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+            scopes: ['read:user', 'repo'],
+            userInfoEndpoint: 'https://api.github.com/user',
+          },
+        },
+      },
+    });
+
+    console.log(`
+    OAuth Endpoints:
+      - /.well-known/oauth-protected-resource
+      - /.well-known/oauth-authorization-server
+      - /oauth/register (Dynamic Client Registration)
+      - /oauth/authorize
+      - /oauth/token
+    `);
+    ```
+
+    <Note>
+      Set `stateless: true` to enable serverless deployment without sessions.
+    </Note>
+  </Step>
+
+  <Step title="Implement GitHub service with token decryption">
+    ```typescript mcp/github/index.ts
+    import { Tool, createAuthError } from '@leanmcp/core';
+    import { TokenVerifier } from '@leanmcp/auth/server';
+
+    export class GitHubService {
+      private verifier: TokenVerifier;
+
+      constructor() {
+        const publicUrl = process.env.PUBLIC_URL || 'http://localhost:3300';
+        const jwtSigningSecret = process.env.JWT_SIGNING_SECRET || process.env.SESSION_SECRET;
+        const jwtEncryptionSecret = Buffer.from(
+          process.env.JWT_ENCRYPTION_SECRET || 
+          process.env.SESSION_SECRET.padEnd(64, '0').slice(0, 64),
+          'hex'
+        );
+
+        this.verifier = new TokenVerifier({
+          issuer: publicUrl,
+          audience: publicUrl,
+          secret: jwtSigningSecret,
+          encryptionSecret: jwtEncryptionSecret,
+        });
+      }
+
+      /**
+       * Decrypt upstream GitHub token from JWT
+       * ChatGPT sends JWT in _meta.authToken
+       */
+      private async getAccessToken(meta?: { authToken?: string }): Promise<string | null> {
+        if (meta?.authToken) {
+          try {
+            const result = await this.verifier.verify(meta.authToken);
+
+            if (result.valid && result.upstreamToken) {
+              // Successfully decrypted GitHub token
+              return result.upstreamToken;
+            }
+          } catch (error: any) {
+            console.warn('[GitHubService] Token verification error:', error.message);
+          }
+        }
+
+        // Fallback to env for local testing
+        return process.env.GITHUB_TOKEN || null;
+      }
+
+      @Tool({
+        description: 'Fetch GitHub profile for authenticated user',
+        securitySchemes: [
+          { type: 'noauth' },
+          { type: 'oauth2', scopes: ['read:user'] }
+        ],
+      })
+      async fetchGitHubProfile(input: ProfileInput, meta?: { authToken?: string }) {
+        const token = await this.getAccessToken(meta);
+
+        if (!token) {
+          // Return MCP auth error to trigger ChatGPT OAuth UI
+          return createAuthError(
+            'Please authenticate with GitHub to view profile data',
+            {
+              resourceMetadataUrl: `${process.env.PUBLIC_URL}/.well-known/oauth-protected-resource`,
+              error: 'invalid_token',
+              errorDescription: 'No access token provided',
+            }
+          );
+        }
+
+        try {
+          const url = input.username
+            ? `https://api.github.com/users/${input.username}`
+            : 'https://api.github.com/user';
+
+          const response = await fetch(url, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/vnd.github.v3+json',
+            },
+          });
+
+          const data = await response.json();
+
+          return {
+            success: true,
+            profile: {
+              login: data.login,
+              name: data.name,
+              avatarUrl: data.avatar_url,
+              bio: data.bio,
+              publicRepos: data.public_repos,
+              followers: data.followers,
+              following: data.following,
+            },
+          };
+        } catch (error: any) {
+          if (error.message.includes('401')) {
+            return createAuthError(
+              'Your GitHub session has expired. Please re-authenticate.',
+              {
+                resourceMetadataUrl: `${process.env.PUBLIC_URL}/.well-known/oauth-protected-resource`,
+                error: 'expired_token',
+              }
+            );
+          }
+
+          return { success: false, error: error.message };
+        }
+      }
+
+      @Tool({
+        description: 'Fetch all repositories for authenticated user',
+        securitySchemes: [
+          { type: 'oauth2', scopes: ['read:user', 'repo'] }
+        ],
+      })
+      async fetchGitHubRepos(input: ProfileInput, meta?: { authToken?: string }) {
+        const token = await this.getAccessToken(meta);
+        if (!token) {
+          return createAuthError('Authentication required', {
+            resourceMetadataUrl: `${process.env.PUBLIC_URL}/.well-known/oauth-protected-resource`,
+          });
+        }
+
+        const url = input.username
+          ? `https://api.github.com/users/${input.username}/repos?per_page=100`
+          : 'https://api.github.com/user/repos?per_page=100';
+
+        const response = await fetch(url, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+
+        const data = await response.json();
+
+        return {
+          success: true,
+          repos: data.map((repo: any) => ({
+            name: repo.name,
+            stars: repo.stargazers_count,
+            forks: repo.forks_count,
+            language: repo.language,
+            isFork: repo.fork,
+          })),
+        };
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Build profile analysis service">
+    ```typescript mcp/analysis/index.ts
+    import { Tool, SchemaConstraint } from '@leanmcp/core';
+
+    class AnalyzeProfileInput {
+      @SchemaConstraint({ description: 'GitHub profile data' })
+      profile!: GitHubProfile;
+
+      @SchemaConstraint({ description: 'Repository data' })
+      repos!: GitHubRepo[];
+
+      @SchemaConstraint({ description: 'Commit statistics' })
+      commitStats!: CommitStats;
+    }
+
+    export class AnalysisService {
+      @Tool({
+        description: 'Analyze GitHub profile and generate roast points',
+        inputClass: AnalyzeProfileInput,
+      })
+      async analyzeProfile(input: AnalyzeProfileInput) {
+        const { profile, repos, commitStats } = input;
+
+        const ownRepos = repos.filter(r => !r.isFork);
+        const totalStars = ownRepos.reduce((sum, r) => sum + r.stars, 0);
+        const abandonedRepos = ownRepos.filter(
+          r => new Date(r.pushedAt) < new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)
+        ).length;
+
+        const roastPoints: string[] = [];
+
+        if (profile.followers < 10) {
+          roastPoints.push('Your follower count suggests even bots are ghosting you');
+        }
+
+        if (totalStars < 5) {
+          roastPoints.push('Your repos have fewer stars than a cloudy night');
+        }
+
+        if (abandonedRepos > ownRepos.length / 2) {
+          roastPoints.push('Half your repos are digital graveyards');
+        }
+
+        if (commitStats.lateNightCommits > commitStats.total * 0.3) {
+          roastPoints.push('Your commit history screams "deadline panic"');
+        }
+
+        return {
+          success: true,
+          analysis: {
+            totalRepos: repos.length,
+            ownRepos: ownRepos.length,
+            totalStars,
+            abandonedRepos,
+            lateNightCommits: commitStats.lateNightCommits,
+            roastPoints,
+          },
+        };
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Generate AI roasts with OpenAI">
+    ```typescript mcp/roast/index.ts
+    import { Tool, SchemaConstraint } from '@leanmcp/core';
+    import OpenAI from 'openai';
+
+    class GenerateRoastInput {
+      @SchemaConstraint({ description: 'GitHub profile data' })
+      profile!: GitHubProfile;
+
+      @SchemaConstraint({ description: 'Profile analysis' })
+      analysis!: ProfileAnalysis;
+
+      @SchemaConstraint({
+        description: 'Roast intensity',
+        enum: ['mild', 'medium', 'savage'],
+        default: 'medium'
+      })
+      intensity?: 'mild' | 'medium' | 'savage';
+    }
+
+    export class RoastService {
+      private openai: OpenAI;
+
+      constructor() {
+        this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      }
+
+      @Tool({
+        description: 'Generate humorous AI roast based on GitHub profile',
+        inputClass: GenerateRoastInput,
+      })
+      async generateRoast(input: GenerateRoastInput) {
+        const { profile, analysis, intensity = 'medium' } = input;
+
+        const prompt = `You are a GitHub profile roaster. Generate a humorous roast.
+
+        PROFILE:
+        - Username: ${profile.login}
+        - Repos: ${profile.publicRepos}
+        - Followers: ${profile.followers}
+        - Stars: ${analysis.totalStars}
+        - Abandoned repos: ${analysis.abandonedRepos}
+
+        INTENSITY: ${intensity}
+
+        Generate JSON with:
+        1. "headline" - Punchy one-liner (under 60 chars)
+        2. "verdict" - 1-2 sentence overall verdict
+        3. "score" - Developer score 1-100 (be harsh but fair)
+        4. "roastLines" - Array of 4-6 specific roast lines
+        5. "improvement" - One genuine improvement suggestion
+
+        Keep it funny but not mean. No personal attacks.
+        `;
+
+        const response = await this.openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
+          temperature: 0.9,
+        });
+
+        const roast = JSON.parse(response.choices[0].message.content!);
+
+        return { success: true, roast };
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Build React dashboard">
+    ```tsx mcp/dashboard/RoastDashboard.tsx
+    import React, { useState, useEffect } from 'react';
+    import { useGptApp, useGptTool } from '@leanmcp/ui';
+
+    export function RoastDashboard() {
+      const { isConnected } = useGptApp();
+      const [state, setState] = useState<'initial' | 'loading' | 'roasted'>('initial');
+      const [profile, setProfile] = useState(null);
+      const [roast, setRoast] = useState(null);
+
+      const { call: fetchProfile } = useGptTool('fetchGitHubProfile');
+      const { call: fetchRepos } = useGptTool('fetchGitHubRepos');
+      const { call: analyze } = useGptTool('analyzeProfile');
+      const { call: generateRoast } = useGptTool('generateRoast');
+
+      useEffect(() => {
+        handleAuth();
+      }, []);
+
+      const handleAuth = async () => {
+        setState('loading');
+
+        // Fetch profile - triggers OAuth if needed
+        const profileResult = await fetchProfile({});
+        if (!profileResult?.success) return;
+
+        setProfile(profileResult.profile);
+
+        // Fetch repos and analyze
+        const reposResult = await fetchRepos({});
+        const analysisResult = await analyze({
+          profile: profileResult.profile,
+          repos: reposResult.repos,
+        });
+
+        // Generate roast
+        const roastResult = await generateRoast({
+          profile: profileResult.profile,
+          analysis: analysisResult.analysis,
+        });
+
+        setRoast(roastResult.roast);
+        setState('roasted');
+      };
+
+      if (!isConnected) return <div>Connecting...</div>;
+      if (state === 'loading') return <div>Analyzing your profile...</div>;
+
+      return (
+        <div className="max-w-2xl mx-auto p-6">
+          {profile && roast && (
+            <>
+              <div className="mb-6">
+                <img src={profile.avatarUrl} className="w-16 h-16 rounded-full" />
+                <h2 className="text-2xl font-bold">@{profile.login}</h2>
+              </div>
+
+              <div className="bg-white rounded-lg border p-6">
+                <div className="text-4xl font-bold mb-4">{roast.score}/100</div>
+                <h3 className="text-xl font-semibold mb-2">{roast.headline}</h3>
+                <p className="text-gray-600 mb-4">{roast.verdict}</p>
+
+                <div className="space-y-2">
+                  {roast.roastLines.map((line, i) => (
+                    <p key={i} className="text-sm">{line}</p>
+                  ))}
+                </div>
+
+                <div className="mt-6 p-4 bg-gray-50 rounded">
+                  <p className="text-xs text-gray-500 uppercase mb-1">Genuine Advice</p>
+                  <p className="text-sm">{roast.improvement}</p>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      );
+    }
+    ```
+  </Step>
+</Steps>
+
+## Environment Configuration
+
+```bash .env
+# Server
+PORT=3300
+PUBLIC_URL=https://your-domain.com
+
+# GitHub OAuth (get from https://github.com/settings/developers)
+GITHUB_CLIENT_ID=your_client_id
+GITHUB_CLIENT_SECRET=your_client_secret
+
+# JWT Secrets (for stateless token encryption)
+SESSION_SECRET=your-random-secret-min-32-chars
+JWT_SIGNING_SECRET=your-signing-secret
+JWT_ENCRYPTION_SECRET=64-char-hex-string
+
+# OpenAI
+OPENAI_API_KEY=sk-...
+
+# Optional: For local testing without OAuth
+GITHUB_TOKEN=ghp_...
+```
+
+## Deploy to Production
+
+<Tabs>
+  <Tab title="Vercel">
+    ```bash
+    # Install Vercel CLI
+    npm i -g vercel
+
+    # Build
+    leanmcp build
+
+    # Deploy
+    vercel --prod
+    ```
+
+    Add environment variables in Vercel dashboard.
+  </Tab>
+
+  <Tab title="AWS Lambda">
+    ```bash
+    # Build
+    leanmcp build
+
+    # Package for Lambda
+    zip -r lambda.zip dist/ node_modules/ package.json
+
+    # Deploy with AWS CLI
+    aws lambda create-function \
+      --function-name github-roast \
+      --runtime nodejs20.x \
+      --handler dist/main.handler \
+      --zip-file fileb://lambda.zip
+    ```
+  </Tab>
+
+  <Tab title="Docker">
+    ```dockerfile Dockerfile
+    FROM node:20-alpine
+
+    WORKDIR /app
+    COPY package*.json ./
+    RUN npm ci --production
+
+    COPY dist/ ./dist/
+
+    EXPOSE 3300
+    CMD ["node", "dist/main.js"]
+    ```
+
+    ```bash
+    docker build -t github-roast .
+    docker run -p 3300:3300 --env-file .env github-roast
+    ```
+  </Tab>
+</Tabs>
+
+## ChatGPT Integration
+
+1. **Create GPT** in ChatGPT
+2. **Add MCP Server**: `https://your-domain.com/mcp`
+3. **OAuth auto-discovered** via `/.well-known/oauth-protected-resource`
+4. **Dynamic Client Registration** happens automatically when user first authorizes
+
+<Note>
+  ChatGPT discovers OAuth configuration automatically via MCP Authorization metadata URLs.
+</Note>
+
+## Key Takeaways
+
+<CardGroup cols={2}>
+  <Card title="Stateless Architecture" icon="server">
+    - No session storage
+    - JWT-encrypted tokens
+    - Serverless-ready
+    - Auto-scaling
+  </Card>
+  
+  <Card title="MCP Authorization" icon="lock">
+    - Standards-compliant OAuth 2.0
+    - Dynamic client registration
+    - Upstream token encryption
+    - ChatGPT-native auth UI
+  </Card>
+  
+  <Card title="AI-Powered" icon="brain">
+    - GPT-4 roast generation
+    - Contextual analysis
+    - Adjustable intensity
+    - Genuine improvement tips
+  </Card>
+  
+  <Card title="React Dashboard" icon="browser">
+    - Real-time profile loading
+    - Interactive UI components
+    - Auto-refresh support
+    - Mobile-responsive
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Social Monitor" href="/examples/social-monitor" icon="chart-line">
+    Multi-tab dashboard with HackerNews integration
+  </Card>
+  
+  <Card title="UI Components" href="/examples/ui-components" icon="palette">
+    Complete guide to @leanmcp/ui components
+  </Card>
+  
+  <Card title="Stateless Mode" href="/guides/deployment" icon="cloud">
+    Deploy MCP servers without state
+  </Card>
+  
+  <Card title="Authentication" href="/features/authentication" icon="shield">
+    Deep dive into MCP Authorization
+  </Card>
+</CardGroup>

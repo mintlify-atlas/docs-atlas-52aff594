@@ -1,0 +1,431 @@
+---
+title: Environment Variable Injection
+description: Request-scoped environment variables with @RequireEnv and getEnv()
+---
+
+LeanMCP provides request-scoped environment variable injection, allowing each authenticated user to have their own secrets and configuration.
+
+## Quick Start
+
+```typescript
+import { Authenticated, AuthProvider } from '@leanmcp/auth';
+import { RequireEnv, getEnv } from '@leanmcp/env-injection';
+import { Tool } from '@leanmcp/core';
+
+const authProvider = new AuthProvider('leanmcp', {
+  apiKey: 'your-api-key'
+});
+
+@Authenticated(authProvider, { projectId: 'my-project' })
+export class SlackService {
+  @Tool({ description: 'Send Slack message' })
+  @RequireEnv(['SLACK_TOKEN', 'SLACK_CHANNEL'])
+  async sendMessage(args: { message: string }) {
+    // Get user's SLACK_TOKEN (not global!)
+    const token = getEnv('SLACK_TOKEN');
+    const channel = getEnv('SLACK_CHANNEL');
+    
+    // Send message using user's credentials
+    await slack.chat.postMessage({
+      token,
+      channel,
+      text: args.message
+    });
+  }
+}
+```
+
+<Note>
+Environment injection requires the **LeanMCP provider** (`@leanmcp/auth`) and a `projectId` in the `@Authenticated` decorator.
+</Note>
+
+## How It Works
+
+### 1. Configure Project ID
+
+Enable environment injection by setting `projectId` in the `@Authenticated` decorator:
+
+```typescript
+@Authenticated(authProvider, { 
+  projectId: 'my-slack-integration' // Required for env injection
+})
+export class SlackService {
+  // ...
+}
+```
+
+### 2. Use @RequireEnv Decorator
+
+Validate that required environment variables exist before execution:
+
+```typescript
+@Tool({ description: 'Create GitHub issue' })
+@RequireEnv(['GITHUB_TOKEN', 'GITHUB_REPO'])
+async createIssue(args: { title: string; body: string }) {
+  const token = getEnv('GITHUB_TOKEN');
+  const repo = getEnv('GITHUB_REPO');
+  
+  // Create issue
+}
+```
+
+Source: `packages/env-injection/src/decorators.ts:30`
+
+<Warning>
+If required environment variables are missing, the method throws an error:
+
+```
+Missing required environment variables: GITHUB_TOKEN, GITHUB_REPO.
+Please configure these secrets in your LeanMCP dashboard for this project.
+```
+</Warning>
+
+### 3. Access Variables with getEnv()
+
+Retrieve user-scoped environment variables:
+
+```typescript
+import { getEnv, getAllEnv } from '@leanmcp/env-injection';
+
+// Get single variable
+const apiKey = getEnv('OPENAI_API_KEY');
+
+// Get all variables
+const allEnvs = getAllEnv();
+console.log('Available secrets:', Object.keys(allEnvs));
+```
+
+Source: `packages/env-injection/src/env-context.ts:39`
+
+## Request Isolation
+
+### Concurrency-Safe
+
+Environment variables are stored in AsyncLocalStorage, ensuring each request has its own isolated context:
+
+```typescript
+// Request A (User 1)
+getEnv('SLACK_TOKEN') // Returns User 1's token
+
+// Request B (User 2) - concurrent
+getEnv('SLACK_TOKEN') // Returns User 2's token
+```
+
+Source: `packages/env-injection/src/env-context.ts:8`
+
+<Note>
+This prevents race conditions in high-concurrency scenarios. Each user's secrets are completely isolated.
+</Note>
+
+### How Isolation Works
+
+1. User authenticates with JWT token
+2. `@Authenticated` decorator fetches user secrets from LeanMCP API
+3. Secrets are stored in AsyncLocalStorage for this request
+4. `getEnv()` reads from request-scoped storage
+5. Storage is cleaned up when request completes
+
+## Multi-Tenant Secrets
+
+### Per-User Configuration
+
+Each user can configure their own secrets in the LeanMCP dashboard:
+
+```typescript
+@Authenticated(authProvider, { projectId: 'slack-bot' })
+export class SlackService {
+  @Tool({ description: 'Send message' })
+  @RequireEnv(['SLACK_TOKEN'])
+  async sendMessage(args: { message: string }) {
+    // Each user sends messages using their own Slack workspace
+    const token = getEnv('SLACK_TOKEN'); // User-specific token
+    
+    await slack.sendMessage(token, args.message);
+  }
+}
+```
+
+**User A's secrets:**
+```
+SLACK_TOKEN=xoxb-user-a-workspace
+SLACK_CHANNEL=#general
+```
+
+**User B's secrets:**
+```
+SLACK_TOKEN=xoxb-user-b-workspace
+SLACK_CHANNEL=#random
+```
+
+### Organization-Level Secrets
+
+Scope secrets to organizations by including org context in the JWT:
+
+```typescript
+@Authenticated(authProvider, { projectId: 'org-integration' })
+export class OrgService {
+  @Tool({ description: 'Deploy to production' })
+  @RequireEnv(['AWS_ACCESS_KEY', 'AWS_SECRET_KEY'])
+  async deploy(args: any) {
+    // Uses organization's AWS credentials
+    const accessKey = getEnv('AWS_ACCESS_KEY');
+    const secretKey = getEnv('AWS_SECRET_KEY');
+    
+    // Deploy using org credentials
+  }
+}
+```
+
+## Error Handling
+
+### Missing Configuration
+
+If `projectId` is not configured:
+
+```typescript
+@Tool({ description: 'Send message' })
+@RequireEnv(['SLACK_TOKEN']) // ERROR: projectId not configured!
+async sendMessage(args: any) {
+  // ...
+}
+```
+
+**Error message:**
+```
+Environment injection not configured for SlackService.sendMessage().
+To use @RequireEnv, you must configure 'projectId' in your @Authenticated decorator:
+@Authenticated(authProvider, { projectId: 'your-project-id' })
+```
+
+Source: `packages/env-injection/src/decorators.ts:40`
+
+### Missing Variables
+
+If required variables are not set by the user:
+
+```typescript
+@RequireEnv(['API_KEY', 'API_SECRET'])
+async apiCall(args: any) {
+  // ...
+}
+```
+
+**Error message:**
+```
+Missing required environment variables: API_KEY, API_SECRET.
+Please configure these secrets in your LeanMCP dashboard for this project.
+```
+
+Source: `packages/env-injection/src/decorators.ts:52`
+
+### Calling getEnv() Outside Context
+
+If `getEnv()` is called without authentication:
+
+```typescript
+// Outside @Authenticated method
+const key = getEnv('API_KEY'); // ERROR!
+```
+
+**Error message:**
+```
+getEnv("API_KEY") called outside of env context.
+To use getEnv(), you must configure 'projectId' in your @Authenticated decorator:
+@Authenticated(authProvider, { projectId: 'your-project-id' })
+```
+
+Source: `packages/env-injection/src/env-context.ts:42`
+
+## Advanced Usage
+
+### Optional Environment Variables
+
+Use `getEnv()` without `@RequireEnv` for optional variables:
+
+```typescript
+@Authenticated(authProvider, { projectId: 'my-project' })
+export class MyService {
+  @Tool({ description: 'Send notification' })
+  async notify(args: { message: string }) {
+    // Optional: use Slack if configured
+    const slackToken = getEnv('SLACK_TOKEN');
+    if (slackToken) {
+      await sendSlackMessage(slackToken, args.message);
+    }
+    
+    // Always send email
+    await sendEmail(args.message);
+  }
+}
+```
+
+### Combining with Authentication
+
+Access both user info and environment variables:
+
+```typescript
+@Authenticated(authProvider, { projectId: 'integration' })
+export class IntegrationService {
+  @Tool({ description: 'Sync data' })
+  @RequireEnv(['API_KEY'])
+  async syncData(args: any) {
+    // Access user info
+    const userId = authUser.sub;
+    const userEmail = authUser.email;
+    
+    // Access user secrets
+    const apiKey = getEnv('API_KEY');
+    
+    // Sync data for this user
+    await api.sync(userId, apiKey);
+  }
+}
+```
+
+### Dynamic Environment Variables
+
+Build variable names dynamically:
+
+```typescript
+@RequireEnv(['OPENAI_API_KEY', 'ANTHROPIC_API_KEY'])
+async callAI(args: { provider: 'openai' | 'anthropic'; prompt: string }) {
+  // Select API key based on provider
+  const envKey = `${args.provider.toUpperCase()}_API_KEY`;
+  const apiKey = getEnv(envKey);
+  
+  // Call appropriate AI service
+  return callAIService(args.provider, apiKey, args.prompt);
+}
+```
+
+## LeanMCP Provider Requirement
+
+<Warning>
+Environment injection **only works** with the LeanMCP authentication provider:
+
+```typescript
+// ✅ Correct: LeanMCP provider
+const authProvider = new AuthProvider('leanmcp', {
+  apiKey: 'your-api-key'
+});
+
+// ❌ Won't work: Other providers don't support user secrets
+const authProvider = new AuthProvider('auth0', {
+  domain: 'example.auth0.com'
+});
+```
+
+Other providers (Auth0, Clerk, Cognito) only support authentication, not user secret management.
+</Warning>
+
+Source: `packages/auth/src/decorators.ts:248`
+
+## Context API
+
+### runWithEnv()
+
+Manually run code with environment context:
+
+```typescript
+import { runWithEnv, getEnv } from '@leanmcp/env-injection';
+
+const userSecrets = {
+  'API_KEY': 'user-key-123',
+  'API_SECRET': 'user-secret-456'
+};
+
+await runWithEnv(userSecrets, async () => {
+  const key = getEnv('API_KEY');
+  console.log('Key:', key); // 'user-key-123'
+});
+```
+
+Source: `packages/env-injection/src/env-context.ts:15`
+
+### hasEnvContext()
+
+Check if currently in an environment context:
+
+```typescript
+import { hasEnvContext } from '@leanmcp/env-injection';
+
+if (hasEnvContext()) {
+  const key = getEnv('API_KEY');
+} else {
+  console.log('No env context available');
+}
+```
+
+Source: `packages/env-injection/src/env-context.ts:24`
+
+## Best Practices
+
+### 1. Always Use @RequireEnv for Critical Secrets
+
+```typescript
+// Good: Validates before execution
+@RequireEnv(['DATABASE_URL', 'ENCRYPTION_KEY'])
+async processData(args: any) {
+  const dbUrl = getEnv('DATABASE_URL');
+  // ...
+}
+
+// Bad: Might fail at runtime
+async processData(args: any) {
+  const dbUrl = getEnv('DATABASE_URL'); // Might be undefined!
+}
+```
+
+### 2. Use Descriptive Variable Names
+
+```typescript
+// Good
+@RequireEnv(['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'])
+
+// Bad
+@RequireEnv(['KEY1', 'KEY2'])
+```
+
+### 3. Document Required Variables
+
+Document which secrets users need to configure:
+
+```typescript
+/**
+ * Send Slack messages.
+ * 
+ * Required environment variables:
+ * - SLACK_TOKEN: Bot token from https://api.slack.com/apps
+ * - SLACK_CHANNEL: Default channel ID (e.g., C01234567)
+ */
+@Tool({ description: 'Send Slack message' })
+@RequireEnv(['SLACK_TOKEN', 'SLACK_CHANNEL'])
+async sendMessage(args: { message: string }) {
+  // ...
+}
+```
+
+### 4. Handle Missing Optional Variables
+
+```typescript
+async notify(args: { message: string }) {
+  // Check before using
+  const slackToken = getEnv('SLACK_TOKEN');
+  if (slackToken) {
+    await sendSlack(slackToken, args.message);
+  } else {
+    console.log('Slack not configured, skipping notification');
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="shield-halved" href="/features/authentication">
+    Set up LeanMCP authentication
+  </Card>
+  <Card title="Multi-Tenancy" icon="users" href="/features/multi-tenancy">
+    Per-user data isolation
+  </Card>
+</CardGroup>

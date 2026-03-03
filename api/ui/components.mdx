@@ -1,0 +1,510 @@
+---
+title: "React Components"
+description: "UI component APIs from @leanmcp/ui"
+---
+
+# React Components
+
+Core UI components for building MCP applications. Built on shadcn/ui design system with MCP-specific enhancements.
+
+## Installation
+
+```bash
+npm install @leanmcp/ui
+```
+
+Import styles in your app:
+
+```tsx
+import '@leanmcp/ui/styles.css';
+```
+
+## Core Components
+
+### Button
+
+Button component with multiple variants and loading state.
+
+```tsx
+import { Button } from '@leanmcp/ui';
+
+function MyComponent() {
+  return (
+    <Button variant="primary" onClick={handleClick}>
+      Click Me
+    </Button>
+  );
+}
+```
+
+#### Props
+
+<ParamField path="variant" type="string" default="primary">
+  Button style variant
+  
+  Options: `primary` | `secondary` | `ghost` | `destructive` | `outline`
+</ParamField>
+
+<ParamField path="size" type="string" default="md">
+  Button size
+  
+  Options: `sm` | `md` | `lg` | `icon`
+</ParamField>
+
+<ParamField path="loading" type="boolean" default={false}>
+  Show loading spinner and disable button
+</ParamField>
+
+<ParamField path="asChild" type="boolean" default={false}>
+  Render as child component using Radix Slot
+</ParamField>
+
+<ParamField path="leftIcon" type="ReactNode">
+  Icon to display on the left side
+</ParamField>
+
+<ParamField path="rightIcon" type="ReactNode">
+  Icon to display on the right side
+</ParamField>
+
+<ParamField path="disabled" type="boolean">
+  Disable the button
+</ParamField>
+
+<ParamField path="onClick" type="function">
+  Click event handler
+</ParamField>
+
+#### Examples
+
+```tsx
+// Loading state
+<Button loading>Loading...</Button>
+
+// With icons
+<Button leftIcon={<SearchIcon />}>Search</Button>
+
+// Variants
+<Button variant="destructive">Delete</Button>
+<Button variant="ghost">Cancel</Button>
+```
+
+---
+
+### Card
+
+Card container component with header, content, and footer sections.
+
+```tsx
+import { Card, CardHeader, CardContent, CardFooter } from '@leanmcp/ui';
+
+function MyComponent() {
+  return (
+    <Card variant="elevated">
+      <CardHeader title="Settings" description="Manage your preferences" />
+      <CardContent>
+        {/* Content */}
+      </CardContent>
+      <CardFooter>
+        <Button>Save</Button>
+      </CardFooter>
+    </Card>
+  );
+}
+```
+
+#### Card Props
+
+<ParamField path="variant" type="string" default="default">
+  Card style variant
+  
+  Options: `default` | `outline` | `elevated`
+</ParamField>
+
+<ParamField path="padding" type="string" default="md">
+  Card padding size
+  
+  Options: `none` | `sm` | `md` | `lg`
+</ParamField>
+
+<ParamField path="interactive" type="boolean" default={false}>
+  Enable hover effects for clickable cards
+</ParamField>
+
+#### CardHeader Props
+
+<ParamField path="title" type="ReactNode">
+  Header title text
+</ParamField>
+
+<ParamField path="description" type="ReactNode">
+  Header description text
+</ParamField>
+
+<ParamField path="action" type="ReactNode">
+  Right-side action element (e.g., button)
+</ParamField>
+
+---
+
+### Input
+
+Input component with label, validation, and icon support.
+
+```tsx
+import { Input } from '@leanmcp/ui';
+
+function MyComponent() {
+  return (
+    <Input
+      label="Email"
+      type="email"
+      placeholder="Enter your email"
+      error={errors.email}
+      fullWidth
+    />
+  );
+}
+```
+
+#### Props
+
+<ParamField path="label" type="string">
+  Input label
+</ParamField>
+
+<ParamField path="helperText" type="string">
+  Helper text displayed below input
+</ParamField>
+
+<ParamField path="error" type="string">
+  Error message (displays in red)
+</ParamField>
+
+<ParamField path="size" type="string" default="md">
+  Input size
+  
+  Options: `sm` | `md` | `lg`
+</ParamField>
+
+<ParamField path="leftElement" type="ReactNode">
+  Element to display on the left (e.g., icon)
+</ParamField>
+
+<ParamField path="rightElement" type="ReactNode">
+  Element to display on the right (e.g., icon)
+</ParamField>
+
+<ParamField path="fullWidth" type="boolean" default={false}>
+  Expand to full width of container
+</ParamField>
+
+#### Examples
+
+```tsx
+// With icon
+<Input
+  leftElement={<SearchIcon />}
+  placeholder="Search..."
+/>
+
+// With validation
+<Input
+  label="Username"
+  value={username}
+  error={username.length < 3 ? 'Too short' : undefined}
+/>
+```
+
+---
+
+### Select
+
+Dropdown select component.
+
+```tsx
+import { Select } from '@leanmcp/ui';
+
+function MyComponent() {
+  return (
+    <Select
+      value={value}
+      onChange={setValue}
+      options={[
+        { value: 'opt1', label: 'Option 1' },
+        { value: 'opt2', label: 'Option 2' },
+      ]}
+    />
+  );
+}
+```
+
+#### Props
+
+<ParamField path="value" type="string">
+  Currently selected value
+</ParamField>
+
+<ParamField path="options" type="SelectOption[]" required>
+  Array of options
+  
+  ```ts
+  interface SelectOption {
+    value: string;
+    label: string;
+    disabled?: boolean;
+  }
+  ```
+</ParamField>
+
+<ParamField path="placeholder" type="string" default="Select...">
+  Placeholder text when no value selected
+</ParamField>
+
+<ParamField path="disabled" type="boolean" default={false}>
+  Disable the select
+</ParamField>
+
+<ParamField path="onChange" type="(value: string) => void">
+  Change event handler
+</ParamField>
+
+---
+
+### Alert
+
+Inline feedback messages with multiple variants.
+
+```tsx
+import { Alert } from '@leanmcp/ui';
+
+function MyComponent() {
+  return (
+    <Alert variant="success" title="Success">
+      Your changes have been saved.
+    </Alert>
+  );
+}
+```
+
+#### Props
+
+<ParamField path="variant" type="AlertVariant" default="info">
+  Alert style variant
+  
+  Options: `info` | `success` | `warning` | `error`
+</ParamField>
+
+<ParamField path="title" type="string">
+  Alert title
+</ParamField>
+
+<ParamField path="children" type="ReactNode">
+  Alert content/description
+</ParamField>
+
+<ParamField path="onDismiss" type="() => void">
+  Dismiss handler. Shows close button if provided.
+</ParamField>
+
+#### Examples
+
+```tsx
+<Alert variant="error" title="Error" onDismiss={handleDismiss}>
+  Failed to save changes. Please try again.
+</Alert>
+
+<Alert variant="warning">
+  This action cannot be undone.
+</Alert>
+```
+
+---
+
+## Layout Components
+
+### Modal
+
+Dialog/modal component built on Radix UI.
+
+```tsx
+import { Modal, Button } from '@leanmcp/ui';
+
+function MyComponent() {
+  const [open, setOpen] = useState(false);
+  
+  return (
+    <Modal
+      open={open}
+      onOpenChange={setOpen}
+      title="Confirm Delete"
+      description="This action cannot be undone."
+      trigger={<Button>Open Modal</Button>}
+    >
+      <Button onClick={() => setOpen(false)}>Cancel</Button>
+      <Button variant="destructive" onClick={handleDelete}>Delete</Button>
+    </Modal>
+  );
+}
+```
+
+#### Props
+
+<ParamField path="open" type="boolean">
+  Controlled open state
+</ParamField>
+
+<ParamField path="defaultOpen" type="boolean">
+  Uncontrolled default open state
+</ParamField>
+
+<ParamField path="onOpenChange" type="(open: boolean) => void">
+  Open state change handler
+</ParamField>
+
+<ParamField path="title" type="string">
+  Modal title
+</ParamField>
+
+<ParamField path="description" type="string">
+  Modal description
+</ParamField>
+
+<ParamField path="trigger" type="ReactNode">
+  Element that triggers the modal (e.g., button)
+</ParamField>
+
+<ParamField path="children" type="ReactNode">
+  Modal content
+</ParamField>
+
+---
+
+## Data Components
+
+### DataGrid
+
+Sortable, filterable data table for displaying tool results.
+
+```tsx
+import { DataGrid } from '@leanmcp/ui';
+import { useTool } from '@leanmcp/ui';
+
+function MyComponent() {
+  const { result } = useTool<{ items: Item[] }>('get-items');
+  
+  return (
+    <DataGrid
+      data={result?.items ?? []}
+      columns={[
+        { key: 'name', header: 'Name', sortable: true },
+        { key: 'price', header: 'Price', cell: (v) => `$${v}` },
+        { key: 'status', header: 'Status' },
+      ]}
+      searchable
+      onRowClick={(row) => console.log(row)}
+    />
+  );
+}
+```
+
+#### Props
+
+<ParamField path="data" type="T[]" required>
+  Array of data objects to display
+</ParamField>
+
+<ParamField path="columns" type="DataGridColumn<T>[]" required>
+  Column definitions
+  
+  ```ts
+  interface DataGridColumn<T> {
+    key: keyof T | string;
+    header: string;
+    cell?: (value: unknown, row: T) => ReactNode;
+    sortable?: boolean;
+    width?: number | string;
+  }
+  ```
+</ParamField>
+
+<ParamField path="searchable" type="boolean" default={false}>
+  Enable global search functionality
+</ParamField>
+
+<ParamField path="searchPlaceholder" type="string" default="Search...">
+  Search input placeholder
+</ParamField>
+
+<ParamField path="onRowClick" type="(row: T) => void">
+  Row click handler
+</ParamField>
+
+<ParamField path="loading" type="boolean" default={false}>
+  Show loading state
+</ParamField>
+
+<ParamField path="emptyMessage" type="string" default="No data">
+  Message to display when data is empty
+</ParamField>
+
+#### Examples
+
+```tsx
+// Custom cell renderer
+<DataGrid
+  data={users}
+  columns={[
+    { key: 'name', header: 'Name' },
+    { 
+      key: 'email', 
+      header: 'Email',
+      cell: (value) => <a href={`mailto:${value}`}>{value}</a>
+    },
+    {
+      key: 'role',
+      header: 'Role',
+      sortable: false,
+      width: 100
+    }
+  ]}
+/>
+```
+
+---
+
+## Type Reference
+
+### SelectOption
+
+```typescript
+interface SelectOption {
+  value: string;
+  label: string;
+  disabled?: boolean;
+}
+```
+
+### AlertVariant
+
+```typescript
+type AlertVariant = 'info' | 'success' | 'warning' | 'error';
+```
+
+### DataGridColumn
+
+```typescript
+interface DataGridColumn<T> {
+  key: keyof T | string;
+  header: string;
+  cell?: (value: unknown, row: T) => ReactNode;
+  sortable?: boolean;
+  width?: number | string;
+}
+```
+
+## See Also
+
+- [MCP Components](/api/ui/mcp-components) - MCP-specific components
+- [Hooks](/api/ui/hooks) - React hooks for MCP integration
+- [UI App Decorator](/api/ui/ui-app-decorator) - Link tools to UI components

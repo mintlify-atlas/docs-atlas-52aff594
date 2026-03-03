@@ -1,0 +1,466 @@
+---
+title: Installation
+description: Install and configure LeanMCP SDK for building production-ready MCP servers
+---
+
+# Installation
+
+LeanMCP is a modular TypeScript SDK for building Model Context Protocol servers. This guide covers installation for all package managers and system requirements.
+
+## System Requirements
+
+<CardGroup cols={2}>
+  <Card title="Node.js" icon="node-js">
+    Node.js 20.x or higher required
+  </Card>
+  <Card title="TypeScript" icon="code">
+    TypeScript 5.0+ recommended for best experience
+  </Card>
+  <Card title="Package Manager" icon="box">
+    npm, yarn, or pnpm supported
+  </Card>
+  <Card title="Operating System" icon="desktop">
+    Windows, macOS, or Linux
+  </Card>
+</CardGroup>
+
+<Note>
+  LeanMCP uses TypeScript decorators and `reflect-metadata`. Make sure your `tsconfig.json` has `experimentalDecorators` and `emitDecoratorMetadata` enabled.
+</Note>
+
+## Quick Installation
+
+The fastest way to get started is using the LeanMCP CLI to scaffold a new project:
+
+<CodeGroup>
+```bash npm
+npx @leanmcp/cli create my-mcp-server
+cd my-mcp-server
+npm install
+```
+
+```bash yarn
+npx @leanmcp/cli create my-mcp-server
+cd my-mcp-server
+yarn install
+```
+
+```bash pnpm
+npx @leanmcp/cli create my-mcp-server
+cd my-mcp-server
+pnpm install
+```
+</CodeGroup>
+
+This creates a complete project with all dependencies configured.
+
+## Package Overview
+
+LeanMCP is split into modular packages. Install only what you need:
+
+### Core Packages (Required)
+
+<AccordionGroup>
+  <Accordion title="@leanmcp/core - Core Runtime" icon="cube">
+    **Version**: 0.4.7
+
+    The core package provides MCP server runtime, decorators, and schema validation.
+
+    <CodeGroup>
+    ```bash npm
+    npm install @leanmcp/core
+    ```
+
+    ```bash yarn
+    yarn add @leanmcp/core
+    ```
+
+    ```bash pnpm
+    pnpm add @leanmcp/core
+    ```
+    </CodeGroup>
+
+    **Includes**:
+    - `@Tool`, `@Prompt`, `@Resource` decorators
+    - `@SchemaConstraint`, `@Optional` schema decorators
+    - `createHTTPServer()` and `MCPServer` classes
+    - Auto-discovery of services
+    - Built-in validation with AJV
+
+    **Dependencies**:
+    - `@modelcontextprotocol/sdk` - Official MCP SDK
+    - `reflect-metadata` - Decorator metadata support
+    - `ajv` - JSON Schema validation
+    - `dotenv` - Environment variables
+  </Accordion>
+
+  <Accordion title="@leanmcp/cli - Command Line Interface" icon="terminal">
+    **Version**: 0.5.12
+
+    CLI tool for scaffolding projects, adding services, and deployment.
+
+    <CodeGroup>
+    ```bash npm
+    npm install -g @leanmcp/cli
+    # or as dev dependency
+    npm install --save-dev @leanmcp/cli
+    ```
+
+    ```bash yarn
+    yarn global add @leanmcp/cli
+    # or as dev dependency
+    yarn add --dev @leanmcp/cli
+    ```
+
+    ```bash pnpm
+    pnpm add -g @leanmcp/cli
+    # or as dev dependency
+    pnpm add -D @leanmcp/cli
+    ```
+    </CodeGroup>
+
+    **Commands**:
+    - `leanmcp create <name>` - Create new project
+    - `leanmcp add <service>` - Add new service
+    - `leanmcp deploy` - Deploy to production
+
+    **Note**: You can also use `npx @leanmcp/cli` without global installation.
+  </Accordion>
+</AccordionGroup>
+
+### Optional Packages
+
+<AccordionGroup>
+  <Accordion title="@leanmcp/auth - Authentication" icon="lock">
+    Authentication and access control for MCP servers.
+
+    <CodeGroup>
+    ```bash npm
+    npm install @leanmcp/auth
+    ```
+
+    ```bash yarn
+    yarn add @leanmcp/auth
+    ```
+
+    ```bash pnpm
+    pnpm add @leanmcp/auth
+    ```
+    </CodeGroup>
+
+    **Use when**:
+    - You need user authentication
+    - Multi-user MCP servers
+    - Permission-based access control
+
+    **Supports**:
+    - AWS Cognito
+    - Auth0
+    - Clerk
+    - Custom JWT providers
+  </Accordion>
+
+  <Accordion title="@leanmcp/elicitation - User Input" icon="comment">
+    Structured user input during tool execution.
+
+    <CodeGroup>
+    ```bash npm
+    npm install @leanmcp/elicitation
+    ```
+
+    ```bash yarn
+    yarn add @leanmcp/elicitation
+    ```
+
+    ```bash pnpm
+    pnpm add @leanmcp/elicitation
+    ```
+    </CodeGroup>
+
+    **Use when**:
+    - Tools need guided user input
+    - Multi-step workflows
+    - Interactive forms during execution
+  </Accordion>
+
+  <Accordion title="@leanmcp/env-injection - Environment Injection" icon="key">
+    Request-scoped environment and secret injection.
+
+    <CodeGroup>
+    ```bash npm
+    npm install @leanmcp/env-injection
+    ```
+
+    ```bash yarn
+    yarn add @leanmcp/env-injection
+    ```
+
+    ```bash pnpm
+    pnpm add @leanmcp/env-injection
+    ```
+    </CodeGroup>
+
+    **Use when**:
+    - Multi-tenant secrets management
+    - Per-request configuration
+    - Dynamic environment variables
+  </Accordion>
+
+  <Accordion title="@leanmcp/ui - UI Components" icon="window">
+    UI components for building MCP Apps (advanced).
+
+    <CodeGroup>
+    ```bash npm
+    npm install @leanmcp/ui
+    ```
+
+    ```bash yarn
+    yarn add @leanmcp/ui
+    ```
+
+    ```bash pnpm
+    pnpm add @leanmcp/ui
+    ```
+    </CodeGroup>
+
+    **Use when**:
+    - Building interactive MCP experiences
+    - Custom UI components for tools
+  </Accordion>
+</AccordionGroup>
+
+## Manual Setup
+
+If you prefer to set up a project manually without the CLI:
+
+<Steps>
+  <Step title="Initialize project">
+    Create a new directory and initialize npm:
+
+    <CodeGroup>
+    ```bash npm
+    mkdir my-mcp-server
+    cd my-mcp-server
+    npm init -y
+    ```
+
+    ```bash yarn
+    mkdir my-mcp-server
+    cd my-mcp-server
+    yarn init -y
+    ```
+
+    ```bash pnpm
+    mkdir my-mcp-server
+    cd my-mcp-server
+    pnpm init
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Install dependencies">
+    Install LeanMCP core and required dependencies:
+
+    <CodeGroup>
+    ```bash npm
+    npm install @leanmcp/core express cors
+    npm install --save-dev @types/express @types/cors @types/node typescript tsx
+    ```
+
+    ```bash yarn
+    yarn add @leanmcp/core express cors
+    yarn add --dev @types/express @types/cors @types/node typescript tsx
+    ```
+
+    ```bash pnpm
+    pnpm add @leanmcp/core express cors
+    pnpm add -D @types/express @types/cors @types/node typescript tsx
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Configure TypeScript">
+    Create `tsconfig.json` with decorator support:
+
+    ```json tsconfig.json
+    {
+      "compilerOptions": {
+        "target": "ES2022",
+        "module": "ESNext",
+        "lib": ["ES2022"],
+        "moduleResolution": "node",
+        "esModuleInterop": true,
+        "strict": true,
+        "skipLibCheck": true,
+        "experimentalDecorators": true,
+        "emitDecoratorMetadata": true,
+        "resolveJsonModule": true,
+        "outDir": "./dist",
+        "rootDir": "./"
+      },
+      "include": ["**/*.ts"],
+      "exclude": ["node_modules", "dist"]
+    }
+    ```
+
+    <Warning>
+      The `experimentalDecorators` and `emitDecoratorMetadata` options are **required** for LeanMCP decorators to work.
+    </Warning>
+  </Step>
+
+  <Step title="Create main entry point">
+    Create `main.ts`:
+
+    ```typescript main.ts
+    import { createHTTPServer } from "@leanmcp/core";
+
+    await createHTTPServer({
+      name: "my-mcp-server",
+      version: "1.0.0",
+      port: 8080,
+      cors: true,
+      logging: true
+    });
+    ```
+  </Step>
+
+  <Step title="Add run scripts">
+    Update `package.json`:
+
+    ```json package.json
+    {
+      "type": "module",
+      "scripts": {
+        "start": "tsx main.ts",
+        "build": "tsc",
+        "dev": "tsx watch main.ts"
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Verify Installation
+
+Verify your installation is working:
+
+<Steps>
+  <Step title="Check Node.js version">
+    ```bash
+    node --version
+    # Should be v20.0.0 or higher
+    ```
+  </Step>
+
+  <Step title="Check LeanMCP CLI">
+    ```bash
+    npx @leanmcp/cli --version
+    # Should output version 0.5.12 or higher
+    ```
+  </Step>
+
+  <Step title="Run the server">
+    ```bash
+    npm start
+    ```
+
+    You should see:
+    ```
+    🚀 MCP HTTP Server running on http://localhost:8080
+    📡 MCP Endpoint: http://localhost:8080/mcp
+    🏥 Health Check: http://localhost:8080/health
+    ```
+  </Step>
+
+  <Step title="Test health endpoint">
+    ```bash
+    curl http://localhost:8080/health
+    ```
+
+    Expected response:
+    ```json
+    {"status":"ok"}
+    ```
+  </Step>
+</Steps>
+
+## Environment Configuration
+
+Create a `.env` file for environment variables:
+
+```bash .env
+# Server Configuration
+PORT=8080
+NODE_ENV=development
+
+# Optional: Authentication (if using @leanmcp/auth)
+# AWS_REGION=us-east-1
+# COGNITO_USER_POOL_ID=your-pool-id
+# COGNITO_CLIENT_ID=your-client-id
+
+# Optional: Observability
+# LEANMCP_API_KEY=your-api-key
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Decorator errors" icon="exclamation-triangle">
+    If you see errors about decorators:
+
+    **Error**: `Experimental support for decorators is a feature that is subject to change`
+
+    **Solution**: Ensure your `tsconfig.json` has:
+    ```json
+    {
+      "compilerOptions": {
+        "experimentalDecorators": true,
+        "emitDecoratorMetadata": true
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Module resolution errors" icon="exclamation-triangle">
+    If you see errors about module imports:
+
+    **Error**: `Cannot find module '@leanmcp/core'`
+
+    **Solutions**:
+    1. Ensure `package.json` has `"type": "module"`
+    2. Check that dependencies are installed: `npm install`
+    3. Clear node_modules and reinstall: `rm -rf node_modules package-lock.json && npm install`
+  </Accordion>
+
+  <Accordion title="Port already in use" icon="exclamation-triangle">
+    If port 8080 is already in use:
+
+    **Error**: `EADDRINUSE: address already in use`
+
+    **Solutions**:
+    1. Change the port in `main.ts`: `port: 3000`
+    2. Or set `PORT` environment variable: `PORT=3000 npm start`
+    3. Or kill the process using the port: `lsof -ti:8080 | xargs kill`
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Create your first MCP server
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/concepts/tools">
+    Learn about Tools, Prompts, and Resources
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/core/create-http-server">
+    Explore the complete API
+  </Card>
+  <Card title="Examples" icon="lightbulb" href="/examples/weather-service">
+    See example implementations
+  </Card>
+</CardGroup>
+
+<Note>
+  Need help? Join our [Discord community](https://discord.com/invite/DsRcA3GwPy) or open an issue on [GitHub](https://github.com/LeanMCP/leanmcp-sdk/issues).
+</Note>
